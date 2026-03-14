@@ -1,0 +1,255 @@
+import React, { useEffect, useState } from "react";
+import {
+  collection,
+  onSnapshot,
+  updateDoc,
+  deleteDoc,
+  doc,
+  orderBy,
+  query,
+} from "firebase/firestore";
+import { db } from "../firebase/config";
+
+const STATUS_CONFIG = {
+  pending:     { label: "Pending",     color: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
+  in_progress: { label: "In Progress", color: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
+  ready:       { label: "Ready",       color: "bg-[#fa5631]/15 text-[#fa5631] border-[#fa5631]/30" },
+  completed:   { label: "Completed",   color: "bg-green-500/15 text-green-400 border-green-500/30" },
+};
+
+const NEXT_STATUS = {
+  pending:     "in_progress",
+  in_progress: "ready",
+  ready:       "completed",
+};
+
+const NEXT_LABEL = {
+  pending:     "Mark In Progress",
+  in_progress: "Mark Ready",
+  ready:       "Mark Completed",
+};
+
+const formatTime = (ts) => {
+  if (!ts) return "—";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" });
+};
+
+const formatDate = (ts) => {
+  if (!ts) return "—";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" });
+};
+
+const OrdersTab = () => {
+  const [orders, setOrders]         = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [filter, setFilter]         = useState("all");
+  const [newOrderIds, setNewOrderIds] = useState(new Set());
+  const prevOrderIds = React.useRef(new Set());
+
+  useEffect(() => {
+    const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      const incoming = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Detect truly new orders (not on first load)
+      if (!loading) {
+        const newIds = new Set();
+        incoming.forEach(o => {
+          if (!prevOrderIds.current.has(o.id)) newIds.add(o.id);
+        });
+        if (newIds.size > 0) {
+          setNewOrderIds(newIds);
+          // Play a subtle notification sound via oscillator
+          try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 880;
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.4);
+          } catch (_) {}
+          setTimeout(() => setNewOrderIds(new Set()), 3000);
+        }
+      }
+
+      prevOrderIds.current = new Set(incoming.map(o => o.id));
+      setOrders(incoming);
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  const updateStatus = async (id, nextStatus) => {
+    await updateDoc(doc(db, "orders", id), { status: nextStatus });
+  };
+
+  const deleteOrder = async (id) => {
+    if (window.confirm("Delete this order permanently?")) {
+      await deleteDoc(doc(db, "orders", id));
+    }
+  };
+
+  const filtered = filter === "all" ? orders : orders.filter(o => o.status === filter);
+
+  const counts = {
+    all:         orders.length,
+    pending:     orders.filter(o => o.status === "pending").length,
+    in_progress: orders.filter(o => o.status === "in_progress").length,
+    ready:       orders.filter(o => o.status === "ready").length,
+    completed:   orders.filter(o => o.status === "completed").length,
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-32">
+      <div className="w-8 h-8 border-2 border-white/10 border-t-[#fa5631] rounded-full animate-spin" />
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Filter tabs */}
+      <div className="flex items-center gap-2 flex-wrap mb-6">
+        {[
+          { key: "all",         label: "All" },
+          { key: "pending",     label: "Pending" },
+          { key: "in_progress", label: "In Progress" },
+          { key: "ready",       label: "Ready" },
+          { key: "completed",   label: "Completed" },
+        ].map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setFilter(key)}
+            className={`px-3 py-1.5 text-xs font-semibold tracking-wide border transition-all cursor-pointer flex items-center gap-1.5 ${
+              filter === key
+                ? "bg-[#fa5631] border-[#fa5631] text-white"
+                : "bg-transparent border-white/10 text-white/40 hover:text-white hover:border-white/30"
+            }`}
+          >
+            {label}
+            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+              filter === key ? "bg-white/20 text-white" : "bg-white/8 text-white/40"
+            }`}>
+              {counts[key]}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-24 text-white/20 text-sm">
+          No {filter === "all" ? "" : filter.replace("_", " ")} orders yet
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filtered.map(order => {
+            const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
+            const isNew = newOrderIds.has(order.id);
+            return (
+              <div
+                key={order.id}
+                className={`bg-[#111111] border transition-all duration-500 ${
+                  isNew
+                    ? "border-[#fa5631] shadow-lg shadow-[#fa5631]/10"
+                    : "border-white/5 hover:border-white/10"
+                }`}
+              >
+                {/* Order header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+                  <div className="flex items-center gap-3">
+                    {isNew && (
+                      <span className="text-[10px] font-black text-[#fa5631] bg-[#fa5631]/15 border border-[#fa5631]/30 px-2 py-0.5 animate-pulse">
+                        NEW
+                      </span>
+                    )}
+                    <div>
+                      <p className="text-white font-bold text-sm">{order.customerName || "Guest"}</p>
+                      <p className="text-white/30 text-xs">
+                        Table {order.table} · {formatTime(order.createdAt)} · {formatDate(order.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs font-semibold px-3 py-1 border ${cfg.color}`}>
+                      {cfg.label}
+                    </span>
+                    <button
+                      onClick={() => deleteOrder(order.id)}
+                      className="w-7 h-7 flex items-center justify-center text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer bg-transparent border-none"
+                      title="Delete order"
+                    >
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" strokeLinecap="round" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Order body */}
+                <div className="px-5 py-4 grid md:grid-cols-3 gap-4">
+                  {/* Items */}
+                  <div className="md:col-span-2">
+                    <p className="text-white/30 text-[10px] font-semibold tracking-widest uppercase mb-2">Items Ordered</p>
+                    <div className="space-y-1.5">
+                      {(order.items || []).map((item, i) => (
+                        <div key={i} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 bg-[#fa5631] text-white text-[10px] font-black flex items-center justify-center flex-shrink-0">
+                              {item.qty}
+                            </span>
+                            <span className="text-white/70 text-sm">{item.name}</span>
+                          </div>
+                          <span className="text-white/40 text-xs">
+                            ₦{(parseFloat(item.price) * item.qty).toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-white/5 flex justify-between">
+                      <span className="text-white/30 text-xs font-semibold uppercase tracking-wide">Total</span>
+                      <span className="text-[#fa5631] font-bold text-sm">₦{Number(order.total || 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Meta */}
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-white/30 text-[10px] font-semibold tracking-widest uppercase mb-1">Email</p>
+                      <p className="text-white/60 text-xs break-all">{order.email || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/30 text-[10px] font-semibold tracking-widest uppercase mb-1">Allergies / Notes</p>
+                      <p className="text-white/60 text-xs">{order.allergies || "None"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action footer */}
+                {order.status !== "completed" && (
+                  <div className="px-5 py-3 border-t border-white/5 flex justify-end">
+                    <button
+                      onClick={() => updateStatus(order.id, NEXT_STATUS[order.status])}
+                      className="text-xs font-semibold px-4 py-2 bg-[#fa5631] hover:bg-[#e04420] text-white transition-all cursor-pointer border-none flex items-center gap-2"
+                    >
+                      {NEXT_LABEL[order.status]}
+                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M5 12h14M12 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default OrdersTab;
