@@ -118,7 +118,7 @@ const Order = () => {
   const sendMail = () => {
     axios
       //https://food-order-zmpp.onrender.com
-      .get("http://localhost:4000", {
+      .get("https://foodco-backend.onrender.com", {
         params: {
           email,
           subject: name,
