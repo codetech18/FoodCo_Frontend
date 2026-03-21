@@ -3,16 +3,14 @@ import orderImg from "../../assets/image/pg.png";
 import axios from "axios";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase/config";
+import { useNavigate } from "react-router-dom";
 import { useListItemsAndTotalPrice } from "../../Context";
 import { useOrder } from "../../Context2";
 
 // ─── Success Modal ────────────────────────────────────────────────────────────
 const SuccessModal = ({ name, onClose }) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-    <div
-      className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-      onClick={onClose}
-    />
+    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
     <div className="relative z-10 bg-[#111111] border border-white/10 w-full max-w-md p-8 shadow-2xl animate-fadeIn">
       <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#fa5631] to-transparent" />
       <div className="flex justify-center mb-6">
@@ -39,16 +37,25 @@ const SuccessModal = ({ name, onClose }) => (
         Thank you, <span className="text-white font-semibold">{name}</span>! 🎉
       </p>
       <p className="text-white/40 text-center text-sm leading-relaxed mb-8">
-        Your order has been received and our team will attend to you shortly.
-        Sit back and enjoy!
+        Your order has been received. You can track and edit it on the next page
+        while it's still pending.
       </p>
       <div className="h-px bg-white/5 mb-6" />
       <div className="flex flex-col gap-3">
         <button
           onClick={onClose}
-          className="w-full bg-[#fa5631] hover:bg-[#e04420] text-white font-bold py-3.5 transition-all duration-300 cursor-pointer border-none"
+          className="w-full bg-[#fa5631] hover:bg-[#e04420] text-white font-bold py-3.5 transition-all duration-300 cursor-pointer border-none flex items-center justify-center gap-2"
         >
-          Done
+          Track My Order
+          <svg
+            className="w-4 h-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
         </button>
         <p className="text-white/25 text-xs text-center">
           A confirmation has been sent to your email.
@@ -66,7 +73,9 @@ const Order = () => {
   const [table, setTable] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [confirmedName, setConfirmedName] = useState("");
+  const [orderId, setOrderId] = useState(null);
 
+  const navigate = useNavigate();
   const { listItemsAndTotalPrice } = useListItemsAndTotalPrice();
   const { orderItem, quantities, clearOrder } = useOrder();
 
@@ -103,7 +112,7 @@ const Order = () => {
       price: parseFloat(price),
       qty,
     }));
-    await addDoc(collection(db, "orders"), {
+    const docRef = await addDoc(collection(db, "orders"), {
       customerName: name,
       email,
       table,
@@ -113,11 +122,11 @@ const Order = () => {
       status: "pending",
       createdAt: serverTimestamp(),
     });
+    return docRef.id;
   };
 
   const sendMail = () => {
     axios
-      //https://food-order-zmpp.onrender.com
       .get("https://foodco-backend.onrender.com", {
         params: {
           email,
@@ -141,8 +150,9 @@ const Order = () => {
       return window.alert("Please add items to your order first.");
 
     try {
-      await saveOrderToFirestore();
+      const id = await saveOrderToFirestore();
       sendMail();
+      setOrderId(id);
       setConfirmedName(name);
       setName("");
       setEmail("");
@@ -154,6 +164,11 @@ const Order = () => {
       console.error("Order save error:", err);
       window.alert("Something went wrong. Please try again.");
     }
+  };
+
+  const handleModalClose = () => {
+    setShowModal(false);
+    if (orderId) navigate(`/track/${orderId}`);
   };
 
   const inputCls =
@@ -168,10 +183,7 @@ const Order = () => {
   return (
     <>
       {showModal && (
-        <SuccessModal
-          name={confirmedName}
-          onClose={() => setShowModal(false)}
-        />
+        <SuccessModal name={confirmedName} onClose={handleModalClose} />
       )}
 
       <section
@@ -257,7 +269,6 @@ const Order = () => {
                   </label>
                   {totalCount > 0 ? (
                     <div className="bg-[#1a1a1a] border border-white/10 p-4 space-y-2">
-                      {/* Column headers */}
                       <div className="flex items-center justify-between pb-2 border-b border-white/5">
                         <span className="text-white/20 text-[10px] font-semibold tracking-widest uppercase flex-1">
                           Item
@@ -268,12 +279,10 @@ const Order = () => {
                         <span className="text-white/20 text-[10px] font-semibold tracking-widest uppercase w-8 text-center">
                           Qty
                         </span>
-                        <span className="text-white/20 text-[10px] font-semibold tracking-widest uppercase w-20 text-right">
+                        <span className="text-white/20 text-[10px] font-semibold tracking-widests uppercase w-20 text-right">
                           Amount
                         </span>
                       </div>
-
-                      {/* Line items */}
                       {Object.entries(quantities).map(
                         ([itemName, { price, qty }]) => (
                           <div
@@ -295,8 +304,6 @@ const Order = () => {
                           </div>
                         ),
                       )}
-
-                      {/* Total */}
                       <div className="pt-2 mt-1 border-t border-white/10 flex justify-between">
                         <span className="text-white/40 text-xs font-semibold uppercase tracking-wide">
                           Total

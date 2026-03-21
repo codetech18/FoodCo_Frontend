@@ -6,11 +6,11 @@ import { OrderProvider } from "./Context2";
 import { AuthProvider } from "./admin/AuthContext";
 import ProtectedRoute from "./admin/ProtectedRoute";
 
-// Route-level lazy loading
 const Home = lazy(() => import("./pages/Home"));
 const MenuPage = lazy(() => import("./pages/MenuPage"));
 const AdminLogin = lazy(() => import("./admin/AdminLogin"));
 const AdminDashboard = lazy(() => import("./admin/AdminDashboard"));
+const TrackOrder = lazy(() => import("./pages/TrackOrder"));
 
 const PageLoader = () => (
   <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -47,6 +47,16 @@ const App = () => {
                     <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
                       <NavBar />
                       <MenuPage />
+                    </div>
+                  }
+                />
+
+                {/* Order tracking — no NavBar */}
+                <Route
+                  path="/track/:orderId"
+                  element={
+                    <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
+                      <TrackOrder />
                     </div>
                   }
                 />
