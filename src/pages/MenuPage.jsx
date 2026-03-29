@@ -1,7 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import Menu from "../components/Menu/Menu";
-import Order from "../components/Order/Order";
 import Footer from "../components/Footer/Footer";
 
 const MenuPage = () => {
@@ -20,12 +19,17 @@ const MenuPage = () => {
           }}
         />
         <div className="max-w-7xl mx-auto relative z-10">
-          {/* Back button */}
           <button
             onClick={() => navigate("/")}
             className="inline-flex items-center gap-2 text-white/40 hover:text-white text-sm font-medium transition-colors mb-8 cursor-pointer bg-transparent border-none group"
           >
-            <svg className="w-4 h-4 group-hover:-translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              className="w-4 h-4 group-hover:-translate-x-1 transition-transform"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <path d="M19 12H5M12 19l-7-7 7-7" />
             </svg>
             Back to Home
@@ -39,49 +43,34 @@ const MenuPage = () => {
             Pick your <span className="text-[#fa5631] italic">dishes</span>
           </h1>
           <p className="text-white/40 text-lg max-w-xl">
-            Browse the menu below, click <strong className="text-white font-medium">+ Add</strong> on anything you want, then scroll down to the order form to confirm.
+            Browse the menu below, click{" "}
+            <strong className="text-white font-medium">+ Add</strong> on
+            anything you want, then proceed to the order form.
           </p>
 
-          {/* Step indicators */}
           <div className="flex items-center gap-4 mt-8">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-[#fa5631] flex items-center justify-center text-white text-sm font-bold">1</div>
-              <span className="text-white text-sm font-medium">Add items from the menu</span>
+              <div className="w-8 h-8 bg-[#fa5631] flex items-center justify-center text-white text-sm font-bold">
+                1
+              </div>
+              <span className="text-white text-sm font-medium">
+                Add items from the menu
+              </span>
             </div>
             <div className="w-8 h-px bg-white/20" />
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-white/10 border border-white/10 flex items-center justify-center text-white/50 text-sm font-bold">2</div>
-              <span className="text-white/50 text-sm">Fill in the order form & confirm</span>
+              <div className="w-8 h-8 bg-white/10 border border-white/10 flex items-center justify-center text-white/50 text-sm font-bold">
+                2
+              </div>
+              <span className="text-white/50 text-sm">
+                Fill in the order form & confirm
+              </span>
             </div>
           </div>
         </div>
       </div>
 
       <Menu />
-
-      {/* Divider with instruction */}
-      <div className="bg-[#0a0a0a] py-10 px-6 text-center border-y border-white/5">
-        <div className="max-w-xl mx-auto">
-          <div className="inline-flex items-center gap-3 text-white/40 text-sm mb-2">
-            <span className="w-12 h-px bg-white/10" />
-            Done picking? Fill in your details below
-            <span className="w-12 h-px bg-white/10" />
-          </div>
-          <div className="flex items-center justify-center gap-4 mt-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-white/10 border border-white/10 flex items-center justify-center text-white/40 text-sm font-bold">1</div>
-              <span className="text-white/40 text-sm line-through">Add items from the menu</span>
-            </div>
-            <div className="w-8 h-px bg-white/20" />
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-[#fa5631] flex items-center justify-center text-white text-sm font-bold">2</div>
-              <span className="text-white text-sm font-medium">Fill in the order form & confirm</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <Order />
       <Footer />
     </div>
   );

@@ -1,27 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
+import {
+  doc,
+  onSnapshot,
+  updateDoc,
+  collection,
+  orderBy,
+  query,
+} from "firebase/firestore";
 import { db } from "../firebase/config";
-
-const ALL_MENU_ITEMS = [
-  { name: "Burger", price: 5000, category: "Mains" },
-  { name: "Grilled Chicken Salad", price: 12000, category: "Mains" },
-  { name: "Spaghetti Bolognese", price: 20000, category: "Mains" },
-  { name: "Jollof Rice", price: 5500, category: "Mains" },
-  { name: "White Rice & Special Sauce", price: 3500, category: "Mains" },
-  { name: "Lasagna", price: 25000, category: "Mains" },
-  { name: "Yam Porridge", price: 4500, category: "Mains" },
-  { name: "Pizza", price: 15000, category: "Mains" },
-  { name: "Fish Pepper Soup", price: 8000, category: "Mains" },
-  { name: "Jollof Rice Combo", price: 12000, category: "Mains" },
-  { name: "Ramen Noodles", price: 20000, category: "Mains" },
-  { name: "Chicken and Chips", price: 16000, category: "Mains" },
-  { name: "Shawarma", price: 2500, category: "Mains" },
-  { name: "Chocolate Drink", price: 2500, category: "Drinks" },
-  { name: "Orange Juice", price: 2000, category: "Drinks" },
-  { name: "Chapman Cocktail", price: 3500, category: "Drinks" },
-  { name: "Pancakes", price: 2500, category: "Breakfast" },
-];
 
 const STATUS_STEPS = ["pending", "in_progress", "ready", "completed"];
 
@@ -61,6 +48,20 @@ const TrackOrder = () => {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [menuFilter, setMenuFilter] = useState("All");
 
+  // Live menu from Firestore — only available items
+  const [liveMenu, setLiveMenu] = useState([]);
+
+  useEffect(() => {
+    const q = query(collection(db, "menu"), orderBy("createdAt", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
+      const items = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((item) => item.available !== false);
+      setLiveMenu(items);
+    });
+    return unsub;
+  }, []);
+
   useEffect(() => {
     if (!orderId) return;
     const unsub = onSnapshot(doc(db, "orders", orderId), (snap) => {
@@ -80,7 +81,6 @@ const TrackOrder = () => {
   }, [orderId]);
 
   const isPending = order?.status === "pending";
-  // can add new items while pending OR in_progress, but not ready/completed
   const canAddMore =
     order?.status === "pending" || order?.status === "in_progress";
 
@@ -152,14 +152,11 @@ const TrackOrder = () => {
 
   const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
   const currentStep = STATUS_STEPS.indexOf(order.status);
-  const categories = ["All", ...new Set(ALL_MENU_ITEMS.map((m) => m.category))];
+  const categories = ["All", ...new Set(liveMenu.map((m) => m.category))];
   const filteredMenu =
     menuFilter === "All"
-      ? ALL_MENU_ITEMS
-      : ALL_MENU_ITEMS.filter((m) => m.category === menuFilter);
-
-  // Items locked from editing (original items when in_progress+)
-  // New items added while in_progress are still saveable
+      ? liveMenu
+      : liveMenu.filter((m) => m.category === menuFilter);
   const lockedItemNames =
     !isPending && order?.items
       ? new Set(order.items.map((i) => i.name))
@@ -177,11 +174,10 @@ const TrackOrder = () => {
             co.
           </span>
         </div>
-        {/* Back to Menu — only shown when order is completed */}
         {order?.status === "completed" && (
           <button
             onClick={() => navigate("/menu")}
-            className="flex items-center gap-2 bg-white text-[#0a0a0a] hover:bg-[#fa5631] hover:text-white font-bold text-xs px-4 py-2 transition-all duration-200 cursor-pointer border-none"
+            className="flex items-center gap-2 bg-white text-[#0a0a0a] hover:bg-[#fa5631] hover:text-white font-bold text-xs px-4 py-2 rounded-full transition-all duration-200 cursor-pointer border-none"
           >
             <svg
               className="w-3.5 h-3.5"
@@ -321,8 +317,6 @@ const TrackOrder = () => {
                       </span>
                     )}
                   </div>
-
-                  {/* Editable counter — pending: all items, in_progress: only new items */}
                   {!isLocked && (isPending || canAddMore) ? (
                     <div className="flex items-center gap-0">
                       <button
@@ -346,14 +340,12 @@ const TrackOrder = () => {
                       {item.qty}
                     </span>
                   )}
-
                   <span className="text-white/40 text-xs w-24 text-right">
                     ₦{(item.price * item.qty).toLocaleString()}
                   </span>
                 </div>
               );
             })}
-
             <div className="pt-3 border-t border-white/5 flex justify-between">
               <span className="text-white/30 text-xs font-semibold uppercase tracking-wide">
                 Total
@@ -368,7 +360,6 @@ const TrackOrder = () => {
             </div>
           </div>
 
-          {/* Add more items button — visible for pending and in_progress */}
           {canAddMore && (
             <div className="px-5 pb-5">
               <button
@@ -390,7 +381,7 @@ const TrackOrder = () => {
           )}
         </div>
 
-        {/* Add items from menu */}
+        {/* Add items from live Firestore menu */}
         {canAddMore && showAddMenu && (
           <div className="bg-[#111111] border border-white/5 mb-6">
             <div className="px-5 py-4 border-b border-white/5">
@@ -412,32 +403,38 @@ const TrackOrder = () => {
               </div>
             </div>
             <div className="p-5 space-y-2 max-h-72 overflow-y-auto">
-              {filteredMenu.map((item) => {
-                const inOrder = editItems?.find((i) => i.name === item.name);
-                return (
-                  <div
-                    key={item.name}
-                    className="flex items-center justify-between py-2 border-b border-white/5 last:border-0"
-                  >
-                    <div>
-                      <p className="text-white/70 text-sm">{item.name}</p>
-                      <p className="text-[#fa5631] text-xs font-semibold">
-                        ₦{item.price.toLocaleString()}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => addMenuItem(item)}
-                      className={`text-xs font-semibold px-3 py-1.5 border transition-all cursor-pointer ${
-                        inOrder
-                          ? "bg-[#fa5631]/20 border-[#fa5631]/40 text-[#fa5631]"
-                          : "bg-transparent border-white/15 text-white hover:bg-[#fa5631] hover:border-[#fa5631]"
-                      }`}
+              {filteredMenu.length === 0 ? (
+                <p className="text-white/20 text-sm text-center py-4">
+                  No items available in this category.
+                </p>
+              ) : (
+                filteredMenu.map((item) => {
+                  const inOrder = editItems?.find((i) => i.name === item.name);
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between py-2 border-b border-white/5 last:border-0"
                     >
-                      {inOrder ? `+1 (${inOrder.qty})` : "+ Add"}
-                    </button>
-                  </div>
-                );
-              })}
+                      <div>
+                        <p className="text-white/70 text-sm">{item.name}</p>
+                        <p className="text-[#fa5631] text-xs font-semibold">
+                          ₦{Number(item.price).toLocaleString()}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => addMenuItem(item)}
+                        className={`text-xs font-semibold px-3 py-1.5 border transition-all cursor-pointer ${
+                          inOrder
+                            ? "bg-[#fa5631]/20 border-[#fa5631]/40 text-[#fa5631]"
+                            : "bg-transparent border-white/15 text-white hover:bg-[#fa5631] hover:border-[#fa5631]"
+                        }`}
+                      >
+                        {inOrder ? `+1 (${inOrder.qty})` : "+ Add"}
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         )}

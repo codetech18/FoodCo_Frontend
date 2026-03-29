@@ -8,9 +8,10 @@ import ProtectedRoute from "./admin/ProtectedRoute";
 
 const Home = lazy(() => import("./pages/Home"));
 const MenuPage = lazy(() => import("./pages/MenuPage"));
+const OrderPage = lazy(() => import("./pages/OrderPage"));
+const TrackOrder = lazy(() => import("./pages/TrackOrder"));
 const AdminLogin = lazy(() => import("./admin/AdminLogin"));
 const AdminDashboard = lazy(() => import("./admin/AdminDashboard"));
-const TrackOrder = lazy(() => import("./pages/TrackOrder"));
 
 const PageLoader = () => (
   <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -31,7 +32,7 @@ const App = () => {
           <OrderProvider>
             <Suspense fallback={<PageLoader />}>
               <Routes>
-                {/* Customer-facing routes — with NavBar */}
+                {/* Customer-facing routes */}
                 <Route
                   path="/"
                   element={
@@ -50,8 +51,16 @@ const App = () => {
                     </div>
                   }
                 />
+                <Route
+                  path="/order"
+                  element={
+                    <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
+                      <OrderPage />
+                    </div>
+                  }
+                />
 
-                {/* Order tracking — no NavBar */}
+                {/* Order tracking */}
                 <Route
                   path="/track/:orderId"
                   element={
@@ -61,7 +70,7 @@ const App = () => {
                   }
                 />
 
-                {/* Admin routes — no NavBar */}
+                {/* Admin routes */}
                 <Route
                   path="/admin/login"
                   element={

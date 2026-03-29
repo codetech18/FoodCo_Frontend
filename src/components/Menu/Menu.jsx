@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { FaHeart, FaStar } from "react-icons/fa";
+import { FaStar } from "react-icons/fa";
 import { IoMdStarHalf } from "react-icons/io";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "../../firebase/config";
+import { useNavigate } from "react-router-dom";
 import { useOrder } from "../../Context2";
 
 const categories = ["All", "Mains", "Drinks", "Breakfast"];
@@ -17,7 +18,6 @@ const StarRow = () => (
   </div>
 );
 
-// Skeleton card shown while loading
 const SkeletonCard = () => (
   <div className="bg-[#111111] border border-white/5 overflow-hidden animate-pulse">
     <div className="h-48 bg-white/5" />
@@ -38,14 +38,14 @@ const Menu = () => {
   const [activeCategory, setActiveCategory] = useState("All");
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
-  // Live sync from Firestore
   useEffect(() => {
     const q = query(collection(db, "menu"), orderBy("createdAt", "asc"));
     const unsub = onSnapshot(q, (snap) => {
       const items = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((item) => item.available !== false); // hide unavailable items
+        .filter((item) => item.available !== false);
       setMenuItems(items);
       setLoading(false);
     });
@@ -75,7 +75,6 @@ const Menu = () => {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Cart badge */}
             {totalCount > 0 && (
               <div className="flex items-center gap-2 bg-[#fa5631]/15 border border-[#fa5631]/30 text-[#fa5631] text-xs font-semibold px-3 py-2">
                 <svg
@@ -92,7 +91,6 @@ const Menu = () => {
                 {totalCount} item{totalCount !== 1 ? "s" : ""} in order
               </div>
             )}
-            {/* Category filters */}
             {categories.map((cat) => (
               <button
                 key={cat}
@@ -132,7 +130,6 @@ const Menu = () => {
                       : "border-white/5 hover:border-[#fa5631]/20"
                   }`}
                 >
-                  {/* Image */}
                   <div className="relative h-48 overflow-hidden bg-[#1a1a1a]">
                     {item.imageUrl ? (
                       <img
@@ -167,7 +164,6 @@ const Menu = () => {
                     )}
                   </div>
 
-                  {/* Info */}
                   <div className="p-4 flex flex-col flex-1">
                     <h3 className="text-white font-semibold text-sm mb-1 leading-snug">
                       {item.name}
@@ -175,7 +171,7 @@ const Menu = () => {
                     <p className="text-white/40 text-xs leading-relaxed mb-3 flex-1">
                       {item.description}
                     </p>
-                    {/*<StarRow />*/}
+                    <StarRow />
                     <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
                       <span className="text-[#fa5631] font-bold text-base">
                         ₦{Number(item.price || 0).toLocaleString()}
@@ -218,12 +214,12 @@ const Menu = () => {
           )}
         </div>
 
-        {/* CTA */}
+        {/* CTA — navigates to /order page */}
         {!loading && menuItems.length > 0 && (
           <div className="flex justify-center mt-14">
-            <a
-              href="#Order"
-              className="group inline-flex items-center gap-3 border border-[#fa5631] text-[#fa5631] hover:bg-[#fa5631] hover:text-white font-semibold px-10 py-4 transition-all duration-300 no-underline"
+            <button
+              onClick={() => navigate("/order")}
+              className="group inline-flex items-center gap-3 border border-[#fa5631] text-[#fa5631] hover:bg-[#fa5631] hover:text-white font-semibold px-10 py-4 transition-all duration-300 cursor-pointer bg-transparent"
             >
               Proceed to Order
               {totalCount > 0 && (
@@ -240,7 +236,7 @@ const Menu = () => {
               >
                 <path d="M5 12h14M12 5l7 7-7 7" />
               </svg>
-            </a>
+            </button>
           </div>
         )}
       </div>
