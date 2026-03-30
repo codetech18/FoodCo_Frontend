@@ -4,12 +4,16 @@ import Hero from "../components/Hero/Hero";
 import Deal from "../components/Deal/Deal";
 import Team from "../components/Team/Team";
 import Footer from "../components/Footer/Footer";
+import ActiveOrderBanner from "../components/ActiveOrderBanner";
 
 const Home = () => {
   const navigate = useNavigate();
 
   return (
     <div>
+      {/* Active order banner — shows if customer has a cached order */}
+      <ActiveOrderBanner />
+
       <Hero />
       <Deal />
 
@@ -31,14 +35,21 @@ const Home = () => {
             Browse our full menu & place your order
           </h2>
           <p className="text-white/70 text-base mb-8">
-            Over 20 dishes across mains, drinks, and breakfast — pick your favourites and order in seconds.
+            Over 20 dishes across mains, drinks, and breakfast — pick your
+            favourites and order in seconds.
           </p>
           <button
             onClick={() => navigate("/menu")}
-            className="inline-flex items-center gap-3 bg-white text-[#fa5631] font-bold px-10 py-4 hover:bg-[#0a0a0a] hover:text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer border-none"
+            className="inline-flex items-center gap-3 bg-white text-[#fa5631] font-bold px-10 py-4 rounded-full hover:bg-[#0a0a0a] hover:text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer border-none"
           >
             View Menu & Order
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              className="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>
           </button>

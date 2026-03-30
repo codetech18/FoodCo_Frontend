@@ -216,10 +216,15 @@ const Menu = () => {
 
         {/* CTA — navigates to /order page */}
         {!loading && menuItems.length > 0 && (
-          <div className="flex justify-center mt-14">
+          <div className="flex flex-col items-center gap-3 mt-14">
             <button
-              onClick={() => navigate("/order")}
-              className="group inline-flex items-center gap-3 border border-[#fa5631] text-[#fa5631] hover:bg-[#fa5631] hover:text-white font-semibold px-10 py-4 transition-all duration-300 cursor-pointer bg-transparent"
+              onClick={() => totalCount > 0 && navigate("/order")}
+              disabled={totalCount === 0}
+              className={`group inline-flex items-center gap-3 font-semibold px-10 py-4 rounded-full transition-all duration-300 ${
+                totalCount > 0
+                  ? "border border-[#fa5631] text-[#fa5631] hover:bg-[#fa5631] hover:text-white cursor-pointer bg-transparent"
+                  : "border border-white/10 text-white/20 cursor-not-allowed bg-transparent"
+              }`}
             >
               Proceed to Order
               {totalCount > 0 && (
@@ -237,6 +242,11 @@ const Menu = () => {
                 <path d="M5 12h14M12 5l7 7-7 7" />
               </svg>
             </button>
+            {totalCount === 0 && (
+              <p className="text-white/20 text-xs">
+                Add at least one item to proceed
+              </p>
+            )}
           </div>
         )}
       </div>

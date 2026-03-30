@@ -6,64 +6,128 @@ import { db } from "../../firebase/config";
 import { useNavigate } from "react-router-dom";
 import { useListItemsAndTotalPrice } from "../../Context";
 import { useOrder } from "../../Context2";
+import { saveOrderId } from "../../utils/orderCache";
 
 // ─── Success Modal ────────────────────────────────────────────────────────────
-const SuccessModal = ({ name, onClose }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-    <div className="relative z-10 bg-[#111111] border border-white/10 w-full max-w-md p-8 shadow-2xl animate-fadeIn">
-      <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#fa5631] to-transparent" />
-      <div className="flex justify-center mb-6">
-        <div className="w-16 h-16 bg-[#fa5631]/15 border border-[#fa5631]/30 rounded-full flex items-center justify-center">
-          <svg
-            className="w-8 h-8 text-[#fa5631]"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
+const SuccessModal = ({ name, orderId, onClose }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(orderId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+      <div className="relative z-10 bg-[#111111] border border-white/10 w-full max-w-md p-8 shadow-2xl animate-fadeIn">
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#fa5631] to-transparent" />
+        <div className="flex justify-center mb-6">
+          <div className="w-16 h-16 bg-[#fa5631]/15 border border-[#fa5631]/30 rounded-full flex items-center justify-center">
+            <svg
+              className="w-8 h-8 text-[#fa5631]"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path
+                d="M20 6L9 17l-5-5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+        </div>
+        <h3 className="font-display text-3xl font-black text-white text-center mb-2">
+          Order Placed!
+        </h3>
+        <p className="text-white/50 text-center text-sm leading-relaxed mb-1">
+          Thank you, <span className="text-white font-semibold">{name}</span>!
+          🎉
+        </p>
+        <p className="text-white/40 text-center text-sm leading-relaxed mb-6">
+          Your order has been received. Save your Order ID to track it anytime.
+        </p>
+
+        {/* Order ID copy box */}
+        <div className="bg-[#1a1a1a] border border-white/10 p-4 mb-6">
+          <p className="text-white/30 text-[10px] font-semibold tracking-widest uppercase mb-2">
+            Your Order ID
+          </p>
+          <div className="flex items-center gap-3">
+            <span className="text-white font-mono text-sm flex-1 truncate">
+              {orderId}
+            </span>
+            <button
+              onClick={handleCopy}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 border transition-all cursor-pointer ${
+                copied
+                  ? "bg-green-500/20 border-green-500/30 text-green-400"
+                  : "bg-transparent border-white/15 text-white/60 hover:text-white hover:border-white/30"
+              }`}
+            >
+              {copied ? (
+                <>
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                  >
+                    <path d="M20 6L9 17l-5-5" strokeLinecap="round" />
+                  </svg>
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                  Copy
+                </>
+              )}
+            </button>
+          </div>
+          <p className="text-white/20 text-[10px] mt-2">
+            Save this ID — you'll need it to track your order from the nav.
+          </p>
+        </div>
+
+        <div className="h-px bg-white/5 mb-6" />
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={onClose}
+            className="w-full bg-[#fa5631] hover:bg-[#e04420] text-white font-bold py-3.5 rounded-full transition-all duration-300 cursor-pointer border-none flex items-center justify-center gap-2"
           >
-            <path
-              d="M20 6L9 17l-5-5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+            Track My Order
+            <svg
+              className="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
+          <p className="text-white/25 text-xs text-center">
+            A confirmation has been sent to your email.
+          </p>
         </div>
       </div>
-      <h3 className="font-display text-3xl font-black text-white text-center mb-2">
-        Order Placed!
-      </h3>
-      <p className="text-white/50 text-center text-sm leading-relaxed mb-1">
-        Thank you, <span className="text-white font-semibold">{name}</span>! 🎉
-      </p>
-      <p className="text-white/40 text-center text-sm leading-relaxed mb-8">
-        Your order has been received. You can track and edit it on the next page
-        while it's still pending.
-      </p>
-      <div className="h-px bg-white/5 mb-6" />
-      <div className="flex flex-col gap-3">
-        <button
-          onClick={onClose}
-          className="w-full bg-[#fa5631] hover:bg-[#e04420] text-white font-bold py-3.5 transition-all duration-300 cursor-pointer border-none flex items-center justify-center gap-2"
-        >
-          Track My Order
-          <svg
-            className="w-4 h-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-          >
-            <path d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
-        </button>
-        <p className="text-white/25 text-xs text-center">
-          A confirmation has been sent to your email.
-        </p>
-      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // ─── Order Component ──────────────────────────────────────────────────────────
 const Order = () => {
@@ -153,6 +217,7 @@ const Order = () => {
       const id = await saveOrderToFirestore();
       sendMail();
       setOrderId(id);
+      saveOrderId(id); // cache for banner tracking
       setConfirmedName(name);
       setName("");
       setEmail("");
@@ -174,7 +239,7 @@ const Order = () => {
   const inputCls =
     "w-full bg-[#1a1a1a] border border-white/10 text-white placeholder-white/25 text-sm px-4 py-3 focus:outline-none focus:border-[#fa5631]/60 transition-colors";
   const labelCls =
-    "block text-white/40 text-xs font-semibold tracking-widest uppercase mb-2";
+    "block text-white/40 text-xs font-semibold tracking-widets uppercase mb-2";
   const totalCount = Object.values(quantities).reduce(
     (s, { qty }) => s + qty,
     0,
@@ -183,7 +248,11 @@ const Order = () => {
   return (
     <>
       {showModal && (
-        <SuccessModal name={confirmedName} onClose={handleModalClose} />
+        <SuccessModal
+          name={confirmedName}
+          orderId={orderId}
+          onClose={handleModalClose}
+        />
       )}
 
       <section
@@ -279,7 +348,7 @@ const Order = () => {
                         <span className="text-white/20 text-[10px] font-semibold tracking-widest uppercase w-8 text-center">
                           Qty
                         </span>
-                        <span className="text-white/20 text-[10px] font-semibold tracking-widests uppercase w-20 text-right">
+                        <span className="text-white/20 text-[10px] font-semibold tracking-widest uppercase w-20 text-right">
                           Amount
                         </span>
                       </div>
@@ -330,7 +399,7 @@ const Order = () => {
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="w-full bg-[#fa5631] hover:bg-[#e04420] text-white font-bold py-4 transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] tracking-wide cursor-pointer border-none"
+                  className="w-full bg-[#fa5631] hover:bg-[#e04420] text-white font-bold py-4 rounded-full transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] tracking-wide cursor-pointer border-none"
                 >
                   Confirm Order
                   {totalCount > 0 && (

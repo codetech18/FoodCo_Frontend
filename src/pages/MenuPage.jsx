@@ -2,13 +2,17 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import Menu from "../components/Menu/Menu";
 import Footer from "../components/Footer/Footer";
+import ActiveOrderBanner from "../components/ActiveOrderBanner";
 
 const MenuPage = () => {
   const navigate = useNavigate();
 
   return (
     <div>
-      {/* Page header with instructions */}
+      {/* Active order banner */}
+      <ActiveOrderBanner />
+
+      {/* Page header */}
       <div className="bg-[#111111] pt-32 pb-12 px-6 border-b border-white/5 relative overflow-hidden">
         <div
           className="absolute inset-0 pointer-events-none"

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   doc,
   onSnapshot,
@@ -43,13 +43,13 @@ const TrackOrder = () => {
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [editItems, setEditItems] = useState(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [menuFilter, setMenuFilter] = useState("All");
-
-  // Live menu from Firestore — only available items
   const [liveMenu, setLiveMenu] = useState([]);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, "menu"), orderBy("createdAt", "asc"));
@@ -83,6 +83,12 @@ const TrackOrder = () => {
   const isPending = order?.status === "pending";
   const canAddMore =
     order?.status === "pending" || order?.status === "in_progress";
+
+  const handleCopyId = () => {
+    navigator.clipboard.writeText(orderId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const changeQty = (index, delta) => {
     setEditItems((prev) => {
@@ -140,12 +146,9 @@ const TrackOrder = () => {
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6">
         <div className="text-center">
           <p className="text-white/30 text-sm mb-4">Order not found.</p>
-          <button
-            onClick={() => navigate("/menu")}
-            className="text-[#fa5631] underline text-sm cursor-pointer bg-transparent border-none"
-          >
+          <Link to="/menu" className="text-[#fa5631] underline text-sm">
             Go back to menu
-          </button>
+          </Link>
         </div>
       </div>
     );
@@ -164,38 +167,126 @@ const TrackOrder = () => {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-      {/* Header */}
-      <div className="bg-[#111111] border-b border-white/5 px-6 py-4 flex items-center justify-between sticky top-0 z-40">
-        <div className="flex items-center gap-0.5">
-          <span className="font-display text-xl font-black text-white">
-            FOOD
-          </span>
-          <span className="font-display text-xl font-black text-[#fa5631] italic">
-            co.
-          </span>
-        </div>
-        {order?.status === "completed" && (
-          <button
-            onClick={() => navigate("/menu")}
-            className="flex items-center gap-2 bg-white text-[#0a0a0a] hover:bg-[#fa5631] hover:text-white font-bold text-xs px-4 py-2 rounded-full transition-all duration-200 cursor-pointer border-none"
-          >
-            <svg
-              className="w-3.5 h-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <path d="M19 12H5M12 19l-7-7 7-7" />
-            </svg>
-            Back to Menu
-          </button>
-        )}
-      </div>
+      {/* ── Full NavBar ─────────────────────────────────────────────────── */}
+      <nav className="bg-[#111111] border-b border-white/5 px-6 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto h-16 flex items-center justify-between">
+          {/* Logo */}
+          <Link to="/" className="flex items-center gap-0.5 no-underline group">
+            <span className="font-display text-xl font-black text-white group-hover:text-[#fa5631] transition-colors">
+              FOOD
+            </span>
+            <span className="font-display text-xl font-black text-[#fa5631] italic">
+              co.
+            </span>
+          </Link>
 
+          {/* Desktop links */}
+          <ul className="hidden md:flex items-center gap-6 list-none">
+            {[
+              { label: "Home", to: "/" },
+              { label: "Menu", to: "/menu" },
+              { label: "Order", to: "/order" },
+            ].map((link) => (
+              <li key={link.label}>
+                <Link
+                  to={link.to}
+                  className="text-sm font-medium text-white/60 hover:text-white transition-colors no-underline"
+                >
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+            <li>
+              <span className="text-sm font-medium text-[#fa5631] font-semibold">
+                Tracking Order
+              </span>
+            </li>
+          </ul>
+
+          {/* Order ID pill — desktop */}
+          <div className="hidden md:flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1.5">
+            <span className="text-white/30 text-[10px] font-semibold tracking-widest uppercase">
+              Order
+            </span>
+            <span className="text-white font-mono text-xs">
+              {orderId.slice(-8).toUpperCase()}
+            </span>
+            <button
+              onClick={handleCopyId}
+              className={`text-[10px] font-semibold px-2 py-0.5 border transition-all cursor-pointer ${
+                copied
+                  ? "bg-green-500/20 border-green-500/30 text-green-400"
+                  : "bg-transparent border-white/10 text-white/40 hover:text-white"
+              }`}
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+
+          {/* Mobile burger */}
+          <button
+            className="md:hidden flex flex-col gap-1.5 p-2 cursor-pointer bg-transparent border-none"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
+            <span
+              className={`w-5 h-0.5 bg-white block transition-all ${mobileMenuOpen ? "rotate-45 translate-y-2" : ""}`}
+            />
+            <span
+              className={`w-5 h-0.5 bg-white block transition-all ${mobileMenuOpen ? "opacity-0" : ""}`}
+            />
+            <span
+              className={`w-5 h-0.5 bg-white block transition-all ${mobileMenuOpen ? "-rotate-45 -translate-y-2" : ""}`}
+            />
+          </button>
+        </div>
+
+        {/* Mobile menu */}
+        <div
+          className={`md:hidden overflow-hidden transition-all duration-300 ${mobileMenuOpen ? "max-h-72 border-t border-white/5" : "max-h-0"}`}
+        >
+          <ul className="py-4 flex flex-col gap-4 list-none">
+            {[
+              { label: "Home", to: "/" },
+              { label: "Menu", to: "/menu" },
+              { label: "Order", to: "/order" },
+            ].map((link) => (
+              <li key={link.label}>
+                <Link
+                  to={link.to}
+                  className="text-white/60 hover:text-white text-sm font-medium no-underline"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+            {/* Order ID on mobile */}
+            <li className="pt-2 border-t border-white/5">
+              <div className="flex items-center gap-2">
+                <span className="text-white/30 text-xs">Order ID:</span>
+                <span className="text-white font-mono text-xs">
+                  {orderId.slice(-8).toUpperCase()}
+                </span>
+                <button
+                  onClick={handleCopyId}
+                  className={`text-[10px] font-semibold px-2 py-0.5 border transition-all cursor-pointer ${
+                    copied
+                      ? "bg-green-500/20 border-green-500/30 text-green-400"
+                      : "bg-transparent border-white/10 text-white/40 hover:text-white"
+                  }`}
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </nav>
+
+      {/* ── Page content ─────────────────────────────────────────────────── */}
       <div className="max-w-2xl mx-auto px-6 py-12">
         {/* Title */}
-        <div className="mb-8">
+        <div className="mb-6">
           <div className="inline-flex items-center gap-2 text-[#fa5631] text-xs font-semibold tracking-widest uppercase mb-3">
             <span className="w-6 h-px bg-[#fa5631]" />
             Order Tracking
@@ -203,9 +294,54 @@ const TrackOrder = () => {
           <h1 className="font-display text-4xl font-black text-white mb-1">
             Hey, {order.customerName}!
           </h1>
-          <p className="text-white/30 text-sm">
-            Table {order.table} · Order #{orderId.slice(-6).toUpperCase()}
-          </p>
+          <p className="text-white/30 text-sm">Table {order.table}</p>
+        </div>
+
+        {/* Order ID box */}
+        <div className="bg-[#111111] border border-white/8 p-4 mb-8 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-white/30 text-[10px] font-semibold tracking-widest uppercase mb-1">
+              Order ID
+            </p>
+            <p className="text-white font-mono text-sm break-all">{orderId}</p>
+          </div>
+          <button
+            onClick={handleCopyId}
+            className={`flex-shrink-0 flex items-center gap-1.5 text-xs font-semibold px-3 py-2 border transition-all cursor-pointer ${
+              copied
+                ? "bg-green-500/20 border-green-500/30 text-green-400"
+                : "bg-transparent border-white/15 text-white/50 hover:text-white hover:border-white/30"
+            }`}
+          >
+            {copied ? (
+              <>
+                <svg
+                  className="w-3 h-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <path d="M20 6L9 17l-5-5" strokeLinecap="round" />
+                </svg>
+                Copied!
+              </>
+            ) : (
+              <>
+                <svg
+                  className="w-3 h-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                Copy ID
+              </>
+            )}
+          </button>
         </div>
 
         {/* Status badge */}
@@ -381,7 +517,7 @@ const TrackOrder = () => {
           )}
         </div>
 
-        {/* Add items from live Firestore menu */}
+        {/* Add items from live menu */}
         {canAddMore && showAddMenu && (
           <div className="bg-[#111111] border border-white/5 mb-6">
             <div className="px-5 py-4 border-b border-white/5">
@@ -444,7 +580,7 @@ const TrackOrder = () => {
           <button
             onClick={saveChanges}
             disabled={saving}
-            className="w-full bg-[#fa5631] hover:bg-[#e04420] disabled:opacity-50 text-white font-bold py-4 transition-all cursor-pointer border-none flex items-center justify-center gap-2 mb-4"
+            className="w-full bg-[#fa5631] hover:bg-[#e04420] disabled:opacity-50 text-white font-bold py-4 rounded-full transition-all cursor-pointer border-none flex items-center justify-center gap-2 mb-4"
           >
             {saving ? (
               <>
