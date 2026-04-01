@@ -185,7 +185,6 @@ const TrackOrder = () => {
             {[
               { label: "Home", to: "/" },
               { label: "Menu", to: "/menu" },
-              { label: "Order", to: "/order" },
             ].map((link) => (
               <li key={link.label}>
                 <Link
@@ -248,7 +247,6 @@ const TrackOrder = () => {
             {[
               { label: "Home", to: "/" },
               { label: "Menu", to: "/menu" },
-              { label: "Order", to: "/order" },
             ].map((link) => (
               <li key={link.label}>
                 <Link
