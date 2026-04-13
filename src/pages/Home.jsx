@@ -1,24 +1,51 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import NavBar from "../components/NavBar";
 import Hero from "../components/Hero/Hero";
 import Deal from "../components/Deal/Deal";
-import Team from "../components/Team/Team";
 import Footer from "../components/Footer/Footer";
 import ActiveOrderBanner from "../components/ActiveOrderBanner";
+import { useRestaurant } from "../context/RestaurantContext";
 
 const Home = () => {
   const navigate = useNavigate();
+  const { restaurantId } = useParams();
+  const { profile, loading, notFound } = useRestaurant();
+
+  if (loading)
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/10 border-t-[#fa5631] rounded-full animate-spin" />
+      </div>
+    );
+
+  if (notFound)
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6 text-center">
+        <div>
+          <p className="text-white/30 text-sm mb-2">Restaurant not found</p>
+          <p className="text-white/20 text-xs">
+            No restaurant exists at{" "}
+            <span className="text-white/40">/{restaurantId}</span>
+          </p>
+        </div>
+      </div>
+    );
+
+  const accent = profile?.accentColor || "#fa5631";
 
   return (
-    <div>
-      {/* Active order banner — shows if customer has a cached order */}
+    <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
+      <NavBar />
       <ActiveOrderBanner />
-
       <Hero />
       <Deal />
 
-      {/* CTA Banner — leads to Menu/Order page */}
-      <div className="bg-[#fa5631] py-16 px-6 text-center relative overflow-hidden">
+      {/* CTA Banner */}
+      <div
+        className="py-16 px-6 text-center relative overflow-hidden"
+        style={{ background: accent }}
+      >
         <div
           className="absolute inset-0 pointer-events-none opacity-10"
           style={{
@@ -35,12 +62,12 @@ const Home = () => {
             Browse our full menu & place your order
           </h2>
           <p className="text-white/70 text-base mb-8">
-            Over 20 dishes across mains, drinks, and breakfast — pick your
-            favourites and order in seconds.
+            Pick your favourites and order in seconds.
           </p>
           <button
-            onClick={() => navigate("/menu")}
-            className="inline-flex items-center gap-3 bg-white text-[#fa5631] font-bold px-10 py-4 rounded-full hover:bg-[#0a0a0a] hover:text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer border-none"
+            onClick={() => navigate(`/${restaurantId}/menu`)}
+            className="inline-flex items-center gap-3 bg-white font-bold px-10 py-4 rounded-full hover:bg-[#0a0a0a] hover:text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer border-none"
+            style={{ color: accent }}
           >
             View Menu & Order
             <svg
@@ -56,7 +83,6 @@ const Home = () => {
         </div>
       </div>
 
-      <Team />
       <Footer />
     </div>
   );

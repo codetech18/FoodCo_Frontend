@@ -3,13 +3,14 @@ import orderImg from "../../assets/image/pg.png";
 import axios from "axios";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase/config";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useListItemsAndTotalPrice } from "../../Context";
 import { useOrder } from "../../Context2";
 import { saveOrderId } from "../../utils/orderCache";
+import { useRestaurant } from "../../context/RestaurantContext";
 
-// ─── Success Modal ────────────────────────────────────────────────────────────
-const SuccessModal = ({ name, orderId, onClose }) => {
+// ─── Success Modal ─────────────────────────────────────────────────────────────
+const SuccessModal = ({ name, orderId, onClose, accent }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -22,11 +23,23 @@ const SuccessModal = ({ name, orderId, onClose }) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
       <div className="relative z-10 bg-[#111111] border border-white/10 w-full max-w-md p-8 shadow-2xl animate-fadeIn">
-        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#fa5631] to-transparent" />
+        {/* Top accent bar */}
+        <div
+          className="absolute top-0 left-0 right-0 h-0.5"
+          style={{
+            background: `linear-gradient(to right, transparent, ${accent}, transparent)`,
+          }}
+        />
+
+        {/* Check icon */}
         <div className="flex justify-center mb-6">
-          <div className="w-16 h-16 bg-[#fa5631]/15 border border-[#fa5631]/30 rounded-full flex items-center justify-center">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center border"
+            style={{ background: `${accent}26`, borderColor: `${accent}4d` }}
+          >
             <svg
-              className="w-8 h-8 text-[#fa5631]"
+              className="w-8 h-8"
+              style={{ color: accent }}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -40,6 +53,7 @@ const SuccessModal = ({ name, orderId, onClose }) => {
             </svg>
           </div>
         </div>
+
         <h3 className="font-display text-3xl font-black text-white text-center mb-2">
           Order Placed!
         </h3>
@@ -51,7 +65,7 @@ const SuccessModal = ({ name, orderId, onClose }) => {
           Your order has been received. Save your Order ID to track it anytime.
         </p>
 
-        {/* Order ID copy box */}
+        {/* Order ID box */}
         <div className="bg-[#1a1a1a] border border-white/10 p-4 mb-6">
           <p className="text-white/30 text-[10px] font-semibold tracking-widest uppercase mb-2">
             Your Order ID
@@ -99,7 +113,7 @@ const SuccessModal = ({ name, orderId, onClose }) => {
             </button>
           </div>
           <p className="text-white/20 text-[10px] mt-2">
-            Save this ID — you'll need it to track your order from the nav.
+            Save this ID — you'll need it to track your order.
           </p>
         </div>
 
@@ -107,7 +121,10 @@ const SuccessModal = ({ name, orderId, onClose }) => {
         <div className="flex flex-col gap-3">
           <button
             onClick={onClose}
-            className="w-full bg-[#fa5631] hover:bg-[#e04420] text-white font-bold py-3.5 rounded-full transition-all duration-300 cursor-pointer border-none flex items-center justify-center gap-2"
+            className="w-full text-white font-bold py-3.5 rounded-full transition-all duration-300 cursor-pointer border-none flex items-center justify-center gap-2"
+            style={{ background: accent }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
           >
             Track My Order
             <svg
@@ -140,6 +157,10 @@ const Order = () => {
   const [orderId, setOrderId] = useState(null);
 
   const navigate = useNavigate();
+  const { restaurantId } = useParams();
+  const { profile } = useRestaurant();
+  const accent = profile?.accentColor || "#fa5631";
+
   const { listItemsAndTotalPrice } = useListItemsAndTotalPrice();
   const { orderItem, quantities, clearOrder } = useOrder();
 
@@ -176,16 +197,19 @@ const Order = () => {
       price: parseFloat(price),
       qty,
     }));
-    const docRef = await addDoc(collection(db, "orders"), {
-      customerName: name,
-      email,
-      table,
-      allergies,
-      items,
-      total: totalValue,
-      status: "pending",
-      createdAt: serverTimestamp(),
-    });
+    const docRef = await addDoc(
+      collection(db, "restaurants", restaurantId, "orders"),
+      {
+        customerName: name,
+        email,
+        table,
+        allergies,
+        items,
+        total: totalValue,
+        status: "pending",
+        createdAt: serverTimestamp(),
+      },
+    );
     return docRef.id;
   };
 
@@ -200,7 +224,6 @@ const Order = () => {
           table,
         },
       })
-      .then(() => console.log("Email sent"))
       .catch((err) => console.error("Email error:", err));
   };
 
@@ -212,12 +235,11 @@ const Order = () => {
     if (!table) return window.alert("Please enter your table number.");
     if (orderItem.length === 0)
       return window.alert("Please add items to your order first.");
-
     try {
       const id = await saveOrderToFirestore();
       sendMail();
       setOrderId(id);
-      saveOrderId(id); // cache for banner tracking
+      saveOrderId(id);
       setConfirmedName(name);
       setName("");
       setEmail("");
@@ -233,13 +255,13 @@ const Order = () => {
 
   const handleModalClose = () => {
     setShowModal(false);
-    if (orderId) navigate(`/track/${orderId}`);
+    if (orderId) navigate(`/${restaurantId}/track/${orderId}`);
   };
 
   const inputCls =
-    "w-full bg-[#1a1a1a] border border-white/10 text-white placeholder-white/25 text-sm px-4 py-3 focus:outline-none focus:border-[#fa5631]/60 transition-colors";
+    "w-full bg-[#1a1a1a] border border-white/10 text-white placeholder-white/25 text-sm px-4 py-3 focus:outline-none transition-colors";
   const labelCls =
-    "block text-white/40 text-xs font-semibold tracking-widets uppercase mb-2";
+    "block text-white/40 text-xs font-semibold tracking-widest uppercase mb-2";
   const totalCount = Object.values(quantities).reduce(
     (s, { qty }) => s + qty,
     0,
@@ -252,6 +274,7 @@ const Order = () => {
           name={confirmedName}
           orderId={orderId}
           onClose={handleModalClose}
+          accent={accent}
         />
       )}
 
@@ -259,30 +282,44 @@ const Order = () => {
         id="Order"
         className="bg-[#111111] py-28 relative overflow-hidden"
       >
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#fa5631]/30 to-transparent" />
-        <div className="absolute top-1/2 right-0 w-96 h-96 bg-[#fa5631]/4 blur-3xl pointer-events-none" />
+        <div
+          className="absolute top-0 left-0 right-0 h-px"
+          style={{
+            background: `linear-gradient(to right, transparent, ${accent}4d, transparent)`,
+          }}
+        />
+        <div
+          className="absolute top-1/2 right-0 w-96 h-96 blur-3xl pointer-events-none"
+          style={{ background: `${accent}0a` }}
+        />
 
         <div className="max-w-7xl mx-auto px-6 lg:px-10">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
+            {/* Image */}
             <div className="hidden lg:flex items-center justify-center">
               <img
                 src={orderImg}
                 alt="Order"
                 loading="lazy"
                 className="w-full max-w-md drop-shadow-2xl"
-                style={{
-                  filter: "drop-shadow(0 20px 60px rgba(250,86,49,0.15))",
-                }}
+                style={{ filter: `drop-shadow(0 20px 60px ${accent}26)` }}
               />
             </div>
 
+            {/* Form */}
             <div>
-              <div className="inline-flex items-center gap-2 text-[#fa5631] text-xs font-semibold tracking-widest uppercase mb-5">
-                <span className="w-8 h-px bg-[#fa5631]" />
+              <div
+                className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase mb-5"
+                style={{ color: accent }}
+              >
+                <span className="w-8 h-px" style={{ background: accent }} />
                 Place your order
               </div>
               <h2 className="font-display text-5xl lg:text-6xl font-black text-white leading-none mb-10">
-                <span className="text-[#fa5631] italic">Order</span> Now
+                <span className="italic" style={{ color: accent }}>
+                  Order
+                </span>{" "}
+                Now
               </h2>
 
               <div className="space-y-5">
@@ -294,6 +331,12 @@ const Order = () => {
                     className={inputCls}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
+                    onFocus={(e) =>
+                      (e.target.style.borderColor = `${accent}99`)
+                    }
+                    onBlur={(e) =>
+                      (e.target.style.borderColor = "rgba(255,255,255,0.1)")
+                    }
                   />
                 </div>
                 <div>
@@ -304,6 +347,12 @@ const Order = () => {
                     className={inputCls}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    onFocus={(e) =>
+                      (e.target.style.borderColor = `${accent}99`)
+                    }
+                    onBlur={(e) =>
+                      (e.target.style.borderColor = "rgba(255,255,255,0.1)")
+                    }
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -315,6 +364,12 @@ const Order = () => {
                       className={inputCls}
                       value={table}
                       onChange={(e) => setTable(e.target.value)}
+                      onFocus={(e) =>
+                        (e.target.style.borderColor = `${accent}99`)
+                      }
+                      onBlur={(e) =>
+                        (e.target.style.borderColor = "rgba(255,255,255,0.1)")
+                      }
                     />
                   </div>
                   <div>
@@ -325,10 +380,17 @@ const Order = () => {
                       className={inputCls}
                       value={allergies}
                       onChange={(e) => setAllergies(e.target.value)}
+                      onFocus={(e) =>
+                        (e.target.style.borderColor = `${accent}99`)
+                      }
+                      onBlur={(e) =>
+                        (e.target.style.borderColor = "rgba(255,255,255,0.1)")
+                      }
                     />
                   </div>
                 </div>
 
+                {/* Order summary */}
                 <div>
                   <label className={labelCls}>
                     Your Order{" "}
@@ -377,7 +439,10 @@ const Order = () => {
                         <span className="text-white/40 text-xs font-semibold uppercase tracking-wide">
                           Total
                         </span>
-                        <span className="text-[#fa5631] font-bold text-sm">
+                        <span
+                          className="font-bold text-sm"
+                          style={{ color: accent }}
+                        >
                           ₦{totalPrice}
                         </span>
                       </div>
@@ -390,7 +455,14 @@ const Order = () => {
                 </div>
 
                 {totalCount === 0 && (
-                  <div className="bg-[#fa5631]/10 border border-[#fa5631]/20 p-4 text-[#fa5631] text-sm">
+                  <div
+                    className="p-4 text-sm border"
+                    style={{
+                      background: `${accent}1a`,
+                      borderColor: `${accent}33`,
+                      color: accent,
+                    }}
+                  >
                     Scroll up to the <strong>Menu</strong> section to add items
                     first.
                   </div>
@@ -399,7 +471,10 @@ const Order = () => {
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="w-full bg-[#fa5631] hover:bg-[#e04420] text-white font-bold py-4 rounded-full transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] tracking-wide cursor-pointer border-none"
+                  className="w-full text-white font-bold py-4 rounded-full transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] tracking-wide cursor-pointer border-none"
+                  style={{ background: accent }}
+                  onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                 >
                   Confirm Order
                   {totalCount > 0 && (

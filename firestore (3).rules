@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Super admin UID — set this to your Firebase Auth UID
+    function isSuperAdmin() {
+      return request.auth != null
+        && request.auth.uid == "REPLACE_WITH_YOUR_UID";
+    }
+
+    function ownsRestaurant(restaurantId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.restaurantId == restaurantId;
+    }
+
+    // Users — owner or super admin
+    match /users/{uid} {
+      allow read, write: if request.auth != null && (request.auth.uid == uid || isSuperAdmin());
+    }
+
+    // Restaurant profile
+    match /restaurants/{restaurantId}/profile/{doc} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if ownsRestaurant(restaurantId) || isSuperAdmin();
+    }
+
+    // Menu
+    match /restaurants/{restaurantId}/menu/{itemId} {
+      allow read: if true;
+      allow create, update, delete: if ownsRestaurant(restaurantId) || isSuperAdmin();
+    }
+
+    // Orders
+    match /restaurants/{restaurantId}/orders/{orderId} {
+      allow create: if true;
+      allow read, update: if true;
+      allow delete: if ownsRestaurant(restaurantId) || isSuperAdmin();
+    }
+  }
+}

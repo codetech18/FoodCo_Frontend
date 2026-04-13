@@ -8,7 +8,9 @@ import {
   orderBy,
   query,
 } from "firebase/firestore";
+import { useParams } from "react-router-dom";
 import { db } from "../firebase/config";
+import { useRestaurant } from "../context/RestaurantContext";
 
 const STATUS_CONFIG = {
   pending: {
@@ -21,7 +23,7 @@ const STATUS_CONFIG = {
   },
   ready: {
     label: "Ready",
-    color: "bg-[#fa5631]/15 text-[#fa5631] border-[#fa5631]/30",
+    color: "bg-orange-500/15 text-orange-400 border-orange-500/30",
   },
   completed: {
     label: "Completed",
@@ -34,7 +36,6 @@ const NEXT_STATUS = {
   in_progress: "ready",
   ready: "completed",
 };
-
 const NEXT_LABEL = {
   pending: "Mark In Progress",
   in_progress: "Mark Ready",
@@ -89,20 +90,32 @@ const groupByDate = (orders) => {
   return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
 };
 
-const OrderCard = ({ order, isNew, updateStatus, deleteOrder }) => {
+// ── Order Card ────────────────────────────────────────────────────────────────
+const OrderCard = ({ order, isNew, updateStatus, deleteOrder, accent }) => {
   const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
   return (
     <div
       className={`bg-[#111111] border transition-all duration-500 ${
-        isNew
-          ? "border-[#fa5631] shadow-lg shadow-[#fa5631]/10"
-          : "border-white/5 hover:border-white/10"
+        isNew ? "shadow-lg" : "border-white/5 hover:border-white/10"
       }`}
+      style={
+        isNew
+          ? { borderColor: accent, boxShadow: `0 4px 24px ${accent}1a` }
+          : {}
+      }
     >
+      {/* Card header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
         <div className="flex items-center gap-3">
           {isNew && (
-            <span className="text-[10px] font-black text-[#fa5631] bg-[#fa5631]/15 border border-[#fa5631]/30 px-2 py-0.5 animate-pulse">
+            <span
+              className="text-[10px] font-black px-2 py-0.5 border animate-pulse"
+              style={{
+                color: accent,
+                background: `${accent}26`,
+                borderColor: `${accent}4d`,
+              }}
+            >
               NEW
             </span>
           )}
@@ -143,6 +156,7 @@ const OrderCard = ({ order, isNew, updateStatus, deleteOrder }) => {
         </div>
       </div>
 
+      {/* Card body */}
       <div className="px-5 py-4 grid md:grid-cols-3 gap-4">
         <div className="md:col-span-2">
           <p className="text-white/30 text-[10px] font-semibold tracking-widest uppercase mb-2">
@@ -152,7 +166,10 @@ const OrderCard = ({ order, isNew, updateStatus, deleteOrder }) => {
             {(order.items || []).map((item, i) => (
               <div key={i} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 bg-[#fa5631] text-white text-[10px] font-black flex items-center justify-center flex-shrink-0">
+                  <span
+                    className="w-5 h-5 text-white text-[10px] font-black flex items-center justify-center flex-shrink-0"
+                    style={{ background: accent }}
+                  >
                     {item.qty}
                   </span>
                   <span className="text-white/70 text-sm">{item.name}</span>
@@ -167,7 +184,7 @@ const OrderCard = ({ order, isNew, updateStatus, deleteOrder }) => {
             <span className="text-white/30 text-xs font-semibold uppercase tracking-wide">
               Total
             </span>
-            <span className="text-[#fa5631] font-bold text-sm">
+            <span className="font-bold text-sm" style={{ color: accent }}>
               ₦{Number(order.total || 0).toLocaleString()}
             </span>
           </div>
@@ -190,11 +207,15 @@ const OrderCard = ({ order, isNew, updateStatus, deleteOrder }) => {
         </div>
       </div>
 
+      {/* Pipeline button */}
       {order.status !== "completed" && (
         <div className="px-5 py-3 border-t border-white/5 flex justify-end">
           <button
             onClick={() => updateStatus(order.id, NEXT_STATUS[order.status])}
-            className="text-xs font-semibold px-4 py-2 bg-[#fa5631] hover:bg-[#e04420] text-white transition-all cursor-pointer border-none flex items-center gap-2"
+            className="text-xs font-semibold px-4 py-2 text-white transition-all cursor-pointer border-none flex items-center gap-2"
+            style={{ background: accent }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
           >
             {NEXT_LABEL[order.status]}
             <svg
@@ -213,7 +234,12 @@ const OrderCard = ({ order, isNew, updateStatus, deleteOrder }) => {
   );
 };
 
+// ── Orders Tab ────────────────────────────────────────────────────────────────
 const OrdersTab = () => {
+  const { restaurantId } = useParams();
+  const { profile } = useRestaurant();
+  const accent = profile?.accentColor || "#fa5631";
+
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("pending");
@@ -221,7 +247,10 @@ const OrdersTab = () => {
   const prevOrderIds = React.useRef(new Set());
 
   useEffect(() => {
-    const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
+    const q = query(
+      collection(db, "restaurants", restaurantId, "orders"),
+      orderBy("createdAt", "desc"),
+    );
     const unsub = onSnapshot(q, (snap) => {
       const incoming = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
@@ -258,15 +287,17 @@ const OrdersTab = () => {
       setLoading(false);
     });
     return unsub;
-  }, []);
+  }, [restaurantId]);
 
   const updateStatus = async (id, nextStatus) => {
-    await updateDoc(doc(db, "orders", id), { status: nextStatus });
+    await updateDoc(doc(db, "restaurants", restaurantId, "orders", id), {
+      status: nextStatus,
+    });
   };
 
   const deleteOrder = async (id) => {
     if (window.confirm("Delete this order permanently?")) {
-      await deleteDoc(doc(db, "orders", id));
+      await deleteDoc(doc(db, "restaurants", restaurantId, "orders", id));
     }
   };
 
@@ -284,7 +315,10 @@ const OrdersTab = () => {
   if (loading)
     return (
       <div className="flex items-center justify-center py-32">
-        <div className="w-8 h-8 border-2 border-white/10 border-t-[#fa5631] rounded-full animate-spin" />
+        <div
+          className="w-8 h-8 border-2 border-white/10 rounded-full animate-spin"
+          style={{ borderTopColor: accent }}
+        />
       </div>
     );
 
@@ -304,19 +338,40 @@ const OrdersTab = () => {
           <button
             key={key}
             onClick={() => setFilter(key)}
-            className={`px-3 py-1.5 text-xs font-semibold tracking-wide border transition-all cursor-pointer flex items-center gap-1.5 ${
+            className="px-3 py-1.5 text-xs font-semibold tracking-wide border transition-all cursor-pointer flex items-center gap-1.5"
+            style={
               filter === key
-                ? "bg-[#fa5631] border-[#fa5631] text-white"
-                : "bg-transparent border-white/10 text-white/40 hover:text-white hover:border-white/30"
-            }`}
+                ? { background: accent, borderColor: accent, color: "white" }
+                : {
+                    background: "transparent",
+                    borderColor: "rgba(255,255,255,0.1)",
+                    color: "rgba(255,255,255,0.4)",
+                  }
+            }
+            onMouseEnter={(e) => {
+              if (filter !== key) {
+                e.currentTarget.style.color = "white";
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (filter !== key) {
+                e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+              }
+            }}
           >
             {label}
             <span
-              className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+              className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+              style={
                 filter === key
-                  ? "bg-white/20 text-white"
-                  : "bg-white/8 text-white/40"
-              }`}
+                  ? { background: "rgba(255,255,255,0.2)", color: "white" }
+                  : {
+                      background: "rgba(255,255,255,0.08)",
+                      color: "rgba(255,255,255,0.4)",
+                    }
+              }
             >
               {counts[key]}
             </span>
@@ -329,7 +384,7 @@ const OrdersTab = () => {
           No {filter === "all" ? "" : filter.replace("_", " ")} orders yet
         </div>
       ) : filter === "all" ? (
-        // Grouped by date — All tab
+        // Grouped by date
         <div className="space-y-10">
           {groupedOrders.map(([dateKey, dayOrders]) => {
             const dayTotal = dayOrders
@@ -337,10 +392,12 @@ const OrdersTab = () => {
               .reduce((sum, o) => sum + Number(o.total || 0), 0);
             return (
               <div key={dateKey}>
-                {/* Date header */}
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/8">
                   <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 bg-[#fa5631] rounded-full" />
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ background: accent }}
+                    />
                     <h3 className="text-white font-bold text-base">
                       {formatDateKey(dateKey)}
                     </h3>
@@ -353,13 +410,14 @@ const OrdersTab = () => {
                     <span className="text-white/30 text-xs font-semibold uppercase tracking-wide">
                       Revenue
                     </span>
-                    <span className="text-[#fa5631] font-black text-sm">
+                    <span
+                      className="font-black text-sm"
+                      style={{ color: accent }}
+                    >
                       ₦{dayTotal.toLocaleString()}
                     </span>
                   </div>
                 </div>
-
-                {/* Orders for this day */}
                 <div className="space-y-4">
                   {dayOrders.map((order) => (
                     <OrderCard
@@ -368,6 +426,7 @@ const OrdersTab = () => {
                       isNew={newOrderIds.has(order.id)}
                       updateStatus={updateStatus}
                       deleteOrder={deleteOrder}
+                      accent={accent}
                     />
                   ))}
                 </div>
@@ -376,7 +435,7 @@ const OrdersTab = () => {
           })}
         </div>
       ) : (
-        // Normal list — other tabs
+        // Normal list
         <div className="space-y-4">
           {filtered.map((order) => (
             <OrderCard
@@ -385,6 +444,7 @@ const OrdersTab = () => {
               isNew={newOrderIds.has(order.id)}
               updateStatus={updateStatus}
               deleteOrder={deleteOrder}
+              accent={accent}
             />
           ))}
         </div>

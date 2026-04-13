@@ -6,20 +6,104 @@ html {
   scroll-behavior: smooth;
 }
 
+/* ── CSS custom properties set dynamically from RestaurantContext ── */
+:root {
+  --accent: #fa5631;
+}
+
+/* ── Scrollbar — uses dynamic accent ── */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+/* ── Dark theme (default) ── */
 body {
   background-color: #0a0a0a;
   color: #f5f0e8;
-  font-family: 'DM Sans', sans-serif;
+  font-family: "DM Sans", sans-serif;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: #0a0a0a; }
-::-webkit-scrollbar-thumb { background: #fa5631; border-radius: 3px; }
+/* ── Light theme ── */
+body.light {
+  background-color: #f8f5f0;
+  color: #1a1a1a;
+}
+
+/* Light theme surface overrides */
+body.light .bg-\[\#0a0a0a\] {
+  background-color: #f8f5f0 !important;
+}
+body.light .bg-\[\#111111\] {
+  background-color: #ffffff !important;
+}
+body.light .bg-\[\#1a1a1a\] {
+  background-color: #f0ece6 !important;
+}
+body.light .bg-\[\#0a0a0a\]\/95 {
+  background-color: rgba(248, 245, 240, 0.95) !important;
+}
+body.light .bg-\[\#0a0a0a\]\/98 {
+  background-color: rgba(248, 245, 240, 0.98) !important;
+}
+
+/* Light theme text overrides */
+body.light .text-white {
+  color: #1a1a1a !important;
+}
+body.light .text-white\/60 {
+  color: rgba(26, 26, 26, 0.6) !important;
+}
+body.light .text-white\/50 {
+  color: rgba(26, 26, 26, 0.5) !important;
+}
+body.light .text-white\/40 {
+  color: rgba(26, 26, 26, 0.4) !important;
+}
+body.light .text-white\/30 {
+  color: rgba(26, 26, 26, 0.3) !important;
+}
+body.light .text-white\/20 {
+  color: rgba(26, 26, 26, 0.2) !important;
+}
+body.light .text-white\/10 {
+  color: rgba(26, 26, 26, 0.1) !important;
+}
+
+/* Light theme border overrides */
+body.light .border-white\/5 {
+  border-color: rgba(26, 26, 26, 0.08) !important;
+}
+body.light .border-white\/10 {
+  border-color: rgba(26, 26, 26, 0.12) !important;
+}
+body.light .border-white\/15 {
+  border-color: rgba(26, 26, 26, 0.15) !important;
+}
+
+/* Light theme scrollbar track */
+body.light ::-webkit-scrollbar-track {
+  background: #f8f5f0;
+}
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95) translateY(10px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 .animate-fadeIn {
   animation: fadeIn 0.25s ease-out forwards;

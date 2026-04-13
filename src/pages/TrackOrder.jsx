@@ -9,6 +9,7 @@ import {
   query,
 } from "firebase/firestore";
 import { db } from "../firebase/config";
+import { useRestaurant } from "../context/RestaurantContext";
 
 const STATUS_STEPS = ["pending", "in_progress", "ready", "completed"];
 
@@ -36,15 +37,21 @@ const STATUS_CONFIG = {
 };
 
 const TrackOrder = () => {
-  const { orderId } = useParams();
+  const { orderId, restaurantId } = useParams();
   const navigate = useNavigate();
+  const { profile } = useRestaurant();
+
+  // Dynamic accent from profile
+  const accent = profile?.accentColor || "#fa5631";
+  const name = profile?.name || "FOODco";
+  const logo = profile?.logoUrl || null;
+
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
-
   const [editItems, setEditItems] = useState(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [menuFilter, setMenuFilter] = useState("All");
@@ -52,33 +59,38 @@ const TrackOrder = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, "menu"), orderBy("createdAt", "asc"));
-    const unsub = onSnapshot(q, (snap) => {
-      const items = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((item) => item.available !== false);
-      setLiveMenu(items);
+    const q = query(
+      collection(db, "restaurants", restaurantId, "menu"),
+      orderBy("createdAt", "asc"),
+    );
+    return onSnapshot(q, (snap) => {
+      setLiveMenu(
+        snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((i) => i.available !== false),
+      );
     });
-    return unsub;
-  }, []);
+  }, [restaurantId]);
 
   useEffect(() => {
     if (!orderId) return;
-    const unsub = onSnapshot(doc(db, "orders", orderId), (snap) => {
-      if (!snap.exists()) {
-        setNotFound(true);
+    return onSnapshot(
+      doc(db, "restaurants", restaurantId, "orders", orderId),
+      (snap) => {
+        if (!snap.exists()) {
+          setNotFound(true);
+          setLoading(false);
+          return;
+        }
+        const data = { id: snap.id, ...snap.data() };
+        setOrder(data);
+        setEditItems((prev) =>
+          prev === null ? data.items.map((i) => ({ ...i })) : prev,
+        );
         setLoading(false);
-        return;
-      }
-      const data = { id: snap.id, ...snap.data() };
-      setOrder(data);
-      setEditItems((prev) =>
-        prev === null ? data.items.map((i) => ({ ...i })) : prev,
-      );
-      setLoading(false);
-    });
-    return unsub;
-  }, [orderId]);
+      },
+    );
+  }, [orderId, restaurantId]);
 
   const isPending = order?.status === "pending";
   const canAddMore =
@@ -118,18 +130,17 @@ const TrackOrder = () => {
 
   const saveChanges = async () => {
     if (!editItems || editItems.length === 0)
-      return window.alert("You need at least one item in your order.");
+      return window.alert("You need at least one item.");
     setSaving(true);
     try {
-      await updateDoc(doc(db, "orders", orderId), {
+      await updateDoc(doc(db, "restaurants", restaurantId, "orders", orderId), {
         items: editItems,
         total: editTotal,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
-      console.error(err);
-      window.alert("Failed to save changes. Try again.");
+      window.alert("Failed to save. Try again.");
     }
     setSaving(false);
   };
@@ -137,7 +148,10 @@ const TrackOrder = () => {
   if (loading)
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-white/10 border-t-[#fa5631] rounded-full animate-spin" />
+        <div
+          className="w-8 h-8 border-2 border-white/10 rounded-full animate-spin"
+          style={{ borderTopColor: accent }}
+        />
       </div>
     );
 
@@ -146,7 +160,11 @@ const TrackOrder = () => {
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6">
         <div className="text-center">
           <p className="text-white/30 text-sm mb-4">Order not found.</p>
-          <Link to="/menu" className="text-[#fa5631] underline text-sm">
+          <Link
+            to={`/${restaurantId}/menu`}
+            className="underline text-sm"
+            style={{ color: accent }}
+          >
             Go back to menu
           </Link>
         </div>
@@ -167,24 +185,37 @@ const TrackOrder = () => {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-      {/* ── Full NavBar ─────────────────────────────────────────────────── */}
+      {/* ── NavBar ── */}
       <nav className="bg-[#111111] border-b border-white/5 px-6 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto h-16 flex items-center justify-between">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-0.5 no-underline group">
-            <span className="font-display text-xl font-black text-white group-hover:text-[#fa5631] transition-colors">
-              FOOD
-            </span>
-            <span className="font-display text-xl font-black text-[#fa5631] italic">
-              co.
-            </span>
+          {/* Dynamic logo */}
+          <Link
+            to={`/${restaurantId}`}
+            className="flex items-center gap-2 no-underline group"
+          >
+            {logo ? (
+              <img
+                src={logo}
+                alt={name}
+                className="h-7 w-auto object-contain"
+              />
+            ) : (
+              <span
+                className="font-display text-xl font-black text-white group-hover:transition-colors"
+                style={{ color: undefined }}
+                onMouseEnter={(e) => (e.target.style.color = accent)}
+                onMouseLeave={(e) => (e.target.style.color = "white")}
+              >
+                {name}
+              </span>
+            )}
           </Link>
 
           {/* Desktop links */}
           <ul className="hidden md:flex items-center gap-6 list-none">
             {[
-              { label: "Home", to: "/" },
-              { label: "Menu", to: "/menu" },
+              { label: "Home", to: `/${restaurantId}` },
+              { label: "Menu", to: `/${restaurantId}/menu` },
             ].map((link) => (
               <li key={link.label}>
                 <Link
@@ -196,13 +227,13 @@ const TrackOrder = () => {
               </li>
             ))}
             <li>
-              <span className="text-sm font-medium text-[#fa5631] font-semibold">
+              <span className="text-sm font-semibold" style={{ color: accent }}>
                 Tracking Order
               </span>
             </li>
           </ul>
 
-          {/* Order ID pill — desktop */}
+          {/* Order ID pill */}
           <div className="hidden md:flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1.5">
             <span className="text-white/30 text-[10px] font-semibold tracking-widest uppercase">
               Order
@@ -245,8 +276,8 @@ const TrackOrder = () => {
         >
           <ul className="py-4 flex flex-col gap-4 list-none">
             {[
-              { label: "Home", to: "/" },
-              { label: "Menu", to: "/menu" },
+              { label: "Home", to: `/${restaurantId}` },
+              { label: "Menu", to: `/${restaurantId}/menu` },
             ].map((link) => (
               <li key={link.label}>
                 <Link
@@ -258,7 +289,6 @@ const TrackOrder = () => {
                 </Link>
               </li>
             ))}
-            {/* Order ID on mobile */}
             <li className="pt-2 border-t border-white/5">
               <div className="flex items-center gap-2">
                 <span className="text-white/30 text-xs">Order ID:</span>
@@ -281,12 +311,15 @@ const TrackOrder = () => {
         </div>
       </nav>
 
-      {/* ── Page content ─────────────────────────────────────────────────── */}
+      {/* ── Page content ── */}
       <div className="max-w-2xl mx-auto px-6 py-12">
         {/* Title */}
         <div className="mb-6">
-          <div className="inline-flex items-center gap-2 text-[#fa5631] text-xs font-semibold tracking-widest uppercase mb-3">
-            <span className="w-6 h-px bg-[#fa5631]" />
+          <div
+            className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase mb-3"
+            style={{ color: accent }}
+          >
+            <span className="w-6 h-px" style={{ background: accent }} />
             Order Tracking
           </div>
           <h1 className="font-display text-4xl font-black text-white mb-1">
@@ -353,14 +386,15 @@ const TrackOrder = () => {
                 : order.status === "in_progress"
                   ? "bg-blue-400 animate-pulse"
                   : order.status === "ready"
-                    ? "bg-[#fa5631] animate-pulse"
+                    ? "animate-pulse"
                     : "bg-green-400"
             }`}
+            style={order.status === "ready" ? { background: accent } : {}}
           />
           {cfg.label}
         </div>
 
-        {/* Progress bar */}
+        {/* Progress bar — accent-colored */}
         <div className="mb-10">
           <div className="flex items-center gap-0">
             {STATUS_STEPS.map((step, i) => {
@@ -372,9 +406,20 @@ const TrackOrder = () => {
                     <div
                       className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black border-2 transition-all ${
                         done
-                          ? "bg-[#fa5631] border-[#fa5631] text-white"
+                          ? "text-white"
                           : "bg-transparent border-white/15 text-white/20"
-                      } ${active ? "ring-2 ring-[#fa5631]/30 ring-offset-2 ring-offset-[#0a0a0a]" : ""}`}
+                      }`}
+                      style={
+                        done
+                          ? {
+                              background: accent,
+                              borderColor: accent,
+                              boxShadow: active
+                                ? `0 0 0 3px ${accent}30`
+                                : undefined,
+                            }
+                          : {}
+                      }
                     >
                       {i < currentStep ? (
                         <svg
@@ -398,7 +443,11 @@ const TrackOrder = () => {
                   </div>
                   {i < STATUS_STEPS.length - 1 && (
                     <div
-                      className={`flex-1 h-0.5 mb-5 transition-all ${i < currentStep ? "bg-[#fa5631]" : "bg-white/8"}`}
+                      className="flex-1 h-0.5 mb-5 transition-all"
+                      style={{
+                        background:
+                          i < currentStep ? accent : "rgba(255,255,255,0.08)",
+                      }}
                     />
                   )}
                 </React.Fragment>
@@ -459,12 +508,22 @@ const TrackOrder = () => {
                       >
                         −
                       </button>
-                      <div className="w-8 h-7 flex items-center justify-center bg-[#fa5631] text-white text-xs font-black border-y border-[#fa5631]">
+                      <div
+                        className="w-8 h-7 flex items-center justify-center text-white text-xs font-black border-y"
+                        style={{ background: accent, borderColor: accent }}
+                      >
                         {item.qty}
                       </div>
                       <button
                         onClick={() => changeQty(i, 1)}
-                        className="w-7 h-7 flex items-center justify-center bg-white/8 hover:bg-[#fa5631] text-white border border-white/10 transition-all cursor-pointer text-sm font-bold leading-none"
+                        className="w-7 h-7 flex items-center justify-center bg-white/8 text-white border border-white/10 transition-all cursor-pointer text-sm font-bold leading-none hover:text-white"
+                        style={{}}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.background = accent)
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.background = "")
+                        }
                       >
                         +
                       </button>
@@ -484,7 +543,7 @@ const TrackOrder = () => {
               <span className="text-white/30 text-xs font-semibold uppercase tracking-wide">
                 Total
               </span>
-              <span className="text-[#fa5631] font-black text-sm">
+              <span className="font-black text-sm" style={{ color: accent }}>
                 ₦
                 {(canAddMore
                   ? editTotal
@@ -498,7 +557,15 @@ const TrackOrder = () => {
             <div className="px-5 pb-5">
               <button
                 onClick={() => setShowAddMenu(!showAddMenu)}
-                className="w-full border border-dashed border-white/15 hover:border-[#fa5631]/50 text-white/40 hover:text-[#fa5631] text-xs font-semibold py-3 transition-all cursor-pointer bg-transparent flex items-center justify-center gap-2"
+                className="w-full border border-dashed border-white/15 text-white/40 text-xs font-semibold py-3 transition-all cursor-pointer bg-transparent flex items-center justify-center gap-2"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = accent;
+                  e.currentTarget.style.color = accent;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "";
+                  e.currentTarget.style.color = "";
+                }}
               >
                 <svg
                   className="w-3.5 h-3.5"
@@ -515,7 +582,7 @@ const TrackOrder = () => {
           )}
         </div>
 
-        {/* Add items from live menu */}
+        {/* Add items panel */}
         {canAddMore && showAddMenu && (
           <div className="bg-[#111111] border border-white/5 mb-6">
             <div className="px-5 py-4 border-b border-white/5">
@@ -525,11 +592,20 @@ const TrackOrder = () => {
                   <button
                     key={cat}
                     onClick={() => setMenuFilter(cat)}
-                    className={`px-3 py-1 text-xs font-semibold border transition-all cursor-pointer ${
+                    className="px-3 py-1 text-xs font-semibold border transition-all cursor-pointer"
+                    style={
                       menuFilter === cat
-                        ? "bg-[#fa5631] border-[#fa5631] text-white"
-                        : "bg-transparent border-white/10 text-white/40 hover:text-white"
-                    }`}
+                        ? {
+                            background: accent,
+                            borderColor: accent,
+                            color: "white",
+                          }
+                        : {
+                            background: "transparent",
+                            borderColor: "rgba(255,255,255,0.1)",
+                            color: "rgba(255,255,255,0.4)",
+                          }
+                    }
                   >
                     {cat}
                   </button>
@@ -539,7 +615,7 @@ const TrackOrder = () => {
             <div className="p-5 space-y-2 max-h-72 overflow-y-auto">
               {filteredMenu.length === 0 ? (
                 <p className="text-white/20 text-sm text-center py-4">
-                  No items available in this category.
+                  No items in this category.
                 </p>
               ) : (
                 filteredMenu.map((item) => {
@@ -551,17 +627,42 @@ const TrackOrder = () => {
                     >
                       <div>
                         <p className="text-white/70 text-sm">{item.name}</p>
-                        <p className="text-[#fa5631] text-xs font-semibold">
+                        <p
+                          className="text-xs font-semibold"
+                          style={{ color: accent }}
+                        >
                           ₦{Number(item.price).toLocaleString()}
                         </p>
                       </div>
                       <button
                         onClick={() => addMenuItem(item)}
-                        className={`text-xs font-semibold px-3 py-1.5 border transition-all cursor-pointer ${
+                        className="text-xs font-semibold px-3 py-1.5 border transition-all cursor-pointer"
+                        style={
                           inOrder
-                            ? "bg-[#fa5631]/20 border-[#fa5631]/40 text-[#fa5631]"
-                            : "bg-transparent border-white/15 text-white hover:bg-[#fa5631] hover:border-[#fa5631]"
-                        }`}
+                            ? {
+                                background: `${accent}33`,
+                                borderColor: `${accent}66`,
+                                color: accent,
+                              }
+                            : {
+                                background: "transparent",
+                                borderColor: "rgba(255,255,255,0.15)",
+                                color: "white",
+                              }
+                        }
+                        onMouseEnter={(e) => {
+                          if (!inOrder) {
+                            e.currentTarget.style.background = accent;
+                            e.currentTarget.style.borderColor = accent;
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!inOrder) {
+                            e.currentTarget.style.background = "transparent";
+                            e.currentTarget.style.borderColor =
+                              "rgba(255,255,255,0.15)";
+                          }
+                        }}
                       >
                         {inOrder ? `+1 (${inOrder.qty})` : "+ Add"}
                       </button>
@@ -578,7 +679,8 @@ const TrackOrder = () => {
           <button
             onClick={saveChanges}
             disabled={saving}
-            className="w-full bg-[#fa5631] hover:bg-[#e04420] disabled:opacity-50 text-white font-bold py-4 rounded-full transition-all cursor-pointer border-none flex items-center justify-center gap-2 mb-4"
+            className="w-full disabled:opacity-50 text-white font-bold py-4 rounded-full transition-all cursor-pointer border-none flex items-center justify-center gap-2 mb-4"
+            style={{ background: accent }}
           >
             {saving ? (
               <>
