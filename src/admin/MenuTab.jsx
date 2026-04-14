@@ -12,6 +12,7 @@ import {
   query,
 } from "firebase/firestore";
 import { db } from "../firebase/config";
+import { useRestaurant } from "../context/RestaurantContext";
 
 const CATEGORIES = ["Mains", "Drinks", "Breakfast"];
 const EMPTY_FORM = {
@@ -22,11 +23,6 @@ const EMPTY_FORM = {
   imageUrl: "",
   available: true,
 };
-
-const labelCls =
-  "block text-white/40 text-[10px] font-semibold tracking-widest uppercase mb-1.5";
-const inputCls =
-  "w-full bg-[#1a1a1a] border border-white/10 text-white placeholder-white/20 text-sm px-3 py-2.5 focus:outline-none focus:border-[#fa5631]/60 transition-colors";
 
 const uploadToCloudinary = async (file, onProgress) => {
   const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
@@ -56,6 +52,16 @@ const uploadToCloudinary = async (file, onProgress) => {
 
 const MenuTab = () => {
   const { restaurantId } = useParams();
+  const { profile } = useRestaurant();
+  const accent = profile?.accentColor || "#fa5631";
+
+  const labelCls =
+    "block text-white/40 text-[10px] font-semibold tracking-widest uppercase mb-1.5";
+  const inputCls =
+    "w-full bg-[#1a1a1a] border border-white/10 text-white placeholder-white/20 text-sm px-3 py-2.5 focus:outline-none transition-colors";
+  const focusStyle = { borderColor: `${accent}99` };
+  const blurStyle = { borderColor: "rgba(255,255,255,0.1)" };
+
   const [dishes, setDishes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -196,7 +202,10 @@ const MenuTab = () => {
   if (loading)
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="w-6 h-6 border-2 border-white/10 border-t-[#fa5631] rounded-full animate-spin" />
+        <div
+          className="w-6 h-6 border-2 border-white/10 rounded-full animate-spin"
+          style={{ borderTopColor: accent }}
+        />
       </div>
     );
 
@@ -209,11 +218,23 @@ const MenuTab = () => {
             <button
               key={cat}
               onClick={() => setFilterCat(cat)}
-              className={`px-3 py-1.5 text-xs font-semibold tracking-wide border transition-all cursor-pointer ${
+              className="px-3 py-1.5 text-xs font-semibold tracking-wide border transition-all cursor-pointer"
+              style={
                 filterCat === cat
-                  ? "bg-[#fa5631] border-[#fa5631] text-white"
-                  : "bg-transparent border-white/10 text-white/40 hover:text-white hover:border-white/30"
-              }`}
+                  ? { background: accent, borderColor: accent, color: "white" }
+                  : {
+                      background: "transparent",
+                      borderColor: "rgba(255,255,255,0.1)",
+                      color: "rgba(255,255,255,0.4)",
+                    }
+              }
+              onMouseEnter={(e) => {
+                if (filterCat !== cat) e.currentTarget.style.color = "white";
+              }}
+              onMouseLeave={(e) => {
+                if (filterCat !== cat)
+                  e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+              }}
             >
               {cat}
             </button>
@@ -223,12 +244,19 @@ const MenuTab = () => {
             placeholder="Search dishes..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="bg-[#1a1a1a] border border-white/10 text-white placeholder-white/20 text-xs px-3 py-1.5 focus:outline-none focus:border-[#fa5631]/40 transition-colors w-40"
+            onFocus={(e) => (e.target.style.borderColor = `${accent}99`)}
+            onBlur={(e) =>
+              (e.target.style.borderColor = "rgba(255,255,255,0.1)")
+            }
+            className="bg-[#1a1a1a] border border-white/10 text-white placeholder-white/20 text-xs px-3 py-1.5 focus:outline-none transition-colors w-40"
           />
         </div>
         <button
           onClick={openAdd}
-          className="flex items-center gap-2 bg-[#fa5631] hover:bg-[#e04420] text-white text-xs font-bold px-4 py-2.5 transition-all cursor-pointer border-none"
+          className="flex items-center gap-2 text-white text-xs font-bold px-4 py-2.5 transition-all cursor-pointer border-none"
+          style={{ background: accent }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
         >
           <svg
             className="w-3.5 h-3.5"
@@ -260,7 +288,9 @@ const MenuTab = () => {
             key={label}
             className="bg-[#111111] border border-white/5 px-4 py-3"
           >
-            <p className="text-[#fa5631] font-black text-xl">{val}</p>
+            <p className="font-black text-xl" style={{ color: accent }}>
+              {val}
+            </p>
             <p className="text-white/30 text-xs">{label}</p>
           </div>
         ))}
@@ -331,7 +361,7 @@ const MenuTab = () => {
                   </span>
                 </div>
                 <div className="md:col-span-2">
-                  <span className="text-[#fa5631] font-bold text-sm">
+                  <span className="font-bold text-sm" style={{ color: accent }}>
                     ₦{Number(dish.price || 0).toLocaleString()}
                   </span>
                 </div>
@@ -350,7 +380,15 @@ const MenuTab = () => {
                 <div className="md:col-span-2 flex items-center justify-end gap-2">
                   <button
                     onClick={() => openEdit(dish)}
-                    className="w-8 h-8 flex items-center justify-center text-white/30 hover:text-[#fa5631] hover:bg-[#fa5631]/10 transition-all cursor-pointer bg-transparent border-none"
+                    className="w-8 h-8 flex items-center justify-center text-white/30 transition-all cursor-pointer bg-transparent border-none"
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = accent;
+                      e.currentTarget.style.background = `${accent}1a`;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = "";
+                      e.currentTarget.style.background = "";
+                    }}
                   >
                     <svg
                       className="w-3.5 h-3.5"
@@ -395,7 +433,14 @@ const MenuTab = () => {
             onClick={closeForm}
           />
           <div className="relative z-10 bg-[#111111] border border-white/10 w-full max-w-lg p-7 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#fa5631] to-transparent" />
+            {/* Accent top bar */}
+            <div
+              className="absolute top-0 left-0 right-0 h-0.5"
+              style={{
+                background: `linear-gradient(to right, transparent, ${accent}, transparent)`,
+              }}
+            />
+
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-white font-bold text-base">
                 {editingId ? "Edit Dish" : "Add New Dish"}
@@ -415,6 +460,7 @@ const MenuTab = () => {
                 </svg>
               </button>
             </div>
+
             <form onSubmit={handleSave} className="space-y-4">
               <div>
                 <label className={labelCls}>Dish Name *</label>
@@ -426,9 +472,14 @@ const MenuTab = () => {
                   onChange={(e) =>
                     setForm((p) => ({ ...p, name: e.target.value }))
                   }
+                  onFocus={(e) => (e.target.style.borderColor = `${accent}99`)}
+                  onBlur={(e) =>
+                    (e.target.style.borderColor = "rgba(255,255,255,0.1)")
+                  }
                   className={inputCls}
                 />
               </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelCls}>Price (₦) *</label>
@@ -441,6 +492,12 @@ const MenuTab = () => {
                     onChange={(e) =>
                       setForm((p) => ({ ...p, price: e.target.value }))
                     }
+                    onFocus={(e) =>
+                      (e.target.style.borderColor = `${accent}99`)
+                    }
+                    onBlur={(e) =>
+                      (e.target.style.borderColor = "rgba(255,255,255,0.1)")
+                    }
                     className={inputCls}
                   />
                 </div>
@@ -450,6 +507,12 @@ const MenuTab = () => {
                     value={form.category}
                     onChange={(e) =>
                       setForm((p) => ({ ...p, category: e.target.value }))
+                    }
+                    onFocus={(e) =>
+                      (e.target.style.borderColor = `${accent}99`)
+                    }
+                    onBlur={(e) =>
+                      (e.target.style.borderColor = "rgba(255,255,255,0.1)")
                     }
                     className={inputCls + " cursor-pointer"}
                   >
@@ -461,6 +524,7 @@ const MenuTab = () => {
                   </select>
                 </div>
               </div>
+
               <div>
                 <label className={labelCls}>Description</label>
                 <textarea
@@ -470,9 +534,15 @@ const MenuTab = () => {
                   onChange={(e) =>
                     setForm((p) => ({ ...p, description: e.target.value }))
                   }
+                  onFocus={(e) => (e.target.style.borderColor = `${accent}99`)}
+                  onBlur={(e) =>
+                    (e.target.style.borderColor = "rgba(255,255,255,0.1)")
+                  }
                   className={inputCls + " resize-none"}
                 />
               </div>
+
+              {/* Image */}
               <div>
                 <label className={labelCls}>Dish Image</label>
                 <div className="flex gap-2 mb-3">
@@ -485,21 +555,38 @@ const MenuTab = () => {
                         setImageFile(null);
                         setImagePreview(mode === "url" ? form.imageUrl : "");
                       }}
-                      className={`px-3 py-1.5 text-xs font-semibold border transition-all cursor-pointer ${
+                      className="px-3 py-1.5 text-xs font-semibold border transition-all cursor-pointer"
+                      style={
                         imageMode === mode
-                          ? "bg-[#fa5631] border-[#fa5631] text-white"
-                          : "bg-transparent border-white/10 text-white/40 hover:text-white"
-                      }`}
+                          ? {
+                              background: accent,
+                              borderColor: accent,
+                              color: "white",
+                            }
+                          : {
+                              background: "transparent",
+                              borderColor: "rgba(255,255,255,0.1)",
+                              color: "rgba(255,255,255,0.4)",
+                            }
+                      }
                     >
                       {mode === "upload" ? "⬆ Upload File" : "🔗 Image URL"}
                     </button>
                   ))}
                 </div>
+
                 {imageMode === "upload" ? (
                   <div>
                     <div
                       onClick={() => fileInputRef.current?.click()}
-                      className="border border-dashed border-white/15 hover:border-[#fa5631]/50 bg-[#1a1a1a] p-6 text-center cursor-pointer transition-all"
+                      className="border border-dashed border-white/15 bg-[#1a1a1a] p-6 text-center cursor-pointer transition-all"
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.borderColor = `${accent}80`)
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.borderColor =
+                          "rgba(255,255,255,0.15)")
+                      }
                     >
                       {imagePreview ? (
                         <img
@@ -527,7 +614,10 @@ const MenuTab = () => {
                         </div>
                       )}
                       {imageFile && (
-                        <p className="text-[#fa5631] text-xs mt-2 truncate">
+                        <p
+                          className="text-xs mt-2 truncate"
+                          style={{ color: accent }}
+                        >
                           {imageFile.name}
                         </p>
                       )}
@@ -547,8 +637,11 @@ const MenuTab = () => {
                         </div>
                         <div className="h-1 bg-white/10">
                           <div
-                            className="h-1 bg-[#fa5631] transition-all duration-300"
-                            style={{ width: `${uploadProgress}%` }}
+                            className="h-1 transition-all duration-300"
+                            style={{
+                              width: `${uploadProgress}%`,
+                              background: accent,
+                            }}
                           />
                         </div>
                       </div>
@@ -564,6 +657,12 @@ const MenuTab = () => {
                         setForm((p) => ({ ...p, imageUrl: e.target.value }));
                         setImagePreview(e.target.value);
                       }}
+                      onFocus={(e) =>
+                        (e.target.style.borderColor = `${accent}99`)
+                      }
+                      onBlur={(e) =>
+                        (e.target.style.borderColor = "rgba(255,255,255,0.1)")
+                      }
                       className={inputCls}
                     />
                     {imagePreview && (
@@ -577,13 +676,20 @@ const MenuTab = () => {
                   </div>
                 )}
               </div>
+
+              {/* Availability toggle */}
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() =>
                     setForm((p) => ({ ...p, available: !p.available }))
                   }
-                  className={`relative w-10 h-5 rounded-full transition-all cursor-pointer border-none ${form.available ? "bg-[#fa5631]" : "bg-white/10"}`}
+                  className="relative w-10 h-5 rounded-full transition-all cursor-pointer border-none"
+                  style={{
+                    background: form.available
+                      ? accent
+                      : "rgba(255,255,255,0.1)",
+                  }}
                 >
                   <span
                     className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${form.available ? "left-5" : "left-0.5"}`}
@@ -593,6 +699,7 @@ const MenuTab = () => {
                   {form.available ? "Available on menu" : "Hidden from menu"}
                 </span>
               </div>
+
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
@@ -604,7 +711,8 @@ const MenuTab = () => {
                 <button
                   type="submit"
                   disabled={saving || uploading}
-                  className="flex-1 bg-[#fa5631] hover:bg-[#e04420] disabled:opacity-50 text-white text-sm font-bold py-3 transition-all cursor-pointer border-none flex items-center justify-center gap-2"
+                  className="flex-1 disabled:opacity-50 text-white text-sm font-bold py-3 transition-all cursor-pointer border-none flex items-center justify-center gap-2"
+                  style={{ background: accent }}
                 >
                   {saving || uploading ? (
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

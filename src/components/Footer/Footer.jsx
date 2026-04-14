@@ -122,7 +122,7 @@ const Footer = () => {
               href="/"
               className="text-white/20 hover:text-white transition-colors no-underline"
             >
-              Tableflow
+              SERVRR
             </a>
           </p>
         </div>

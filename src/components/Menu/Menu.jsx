@@ -3,7 +3,7 @@ import { FaStar } from "react-icons/fa";
 import { IoMdStarHalf } from "react-icons/io";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "../../firebase/config";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useOrder } from "../../Context2";
 import { useRestaurant } from "../../context/RestaurantContext";
 
@@ -44,6 +44,8 @@ const Menu = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const tableParam = searchParams.get("table") || "";
 
   useEffect(() => {
     if (!restaurantId) return;
@@ -285,7 +287,10 @@ const Menu = () => {
           <div className="flex flex-col items-center gap-3 mt-14">
             <button
               onClick={() =>
-                totalCount > 0 && navigate(`/${restaurantId}/order`)
+                totalCount > 0 &&
+                navigate(
+                  `/${restaurantId}/order${tableParam ? `?table=${tableParam}` : ""}`,
+                )
               }
               disabled={totalCount === 0}
               className="group inline-flex items-center gap-3 font-semibold px-10 py-4 rounded-full transition-all duration-300 bg-transparent cursor-pointer"

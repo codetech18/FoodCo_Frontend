@@ -100,11 +100,8 @@ const Login = () => {
             to="/"
             className="inline-flex items-center gap-0.5 no-underline mb-8"
           >
-            <span className="font-display text-2xl font-black text-white">
-              TABLE
-            </span>
-            <span className="font-display text-2xl font-black text-[#fa5631] italic">
-              flow.
+            <span class="font-display text-2xl font-black text-white">
+              SERVRR
             </span>
           </Link>
           <h1 className="font-display text-4xl font-black text-white mb-2">

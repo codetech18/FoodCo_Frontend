@@ -3,7 +3,7 @@ import orderImg from "../../assets/image/pg.png";
 import axios from "axios";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase/config";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useListItemsAndTotalPrice } from "../../Context";
 import { useOrder } from "../../Context2";
 import { saveOrderId } from "../../utils/orderCache";
@@ -151,8 +151,10 @@ const Order = () => {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [allergies, setAllergies] = useState("");
-  const [table, setTable] = useState("");
+  const [searchParams] = useSearchParams();
+  const [table, setTable] = useState(searchParams.get("table") || "");
   const [showModal, setShowModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [confirmedName, setConfirmedName] = useState("");
   const [orderId, setOrderId] = useState(null);
 
@@ -228,6 +230,7 @@ const Order = () => {
   };
 
   const handleSubmit = async () => {
+    if (submitting) return; // prevent double submit
     if (!name) return window.alert("Please enter your name.");
     if (!email) return window.alert("Please enter your email.");
     if (!allergies)
@@ -235,6 +238,7 @@ const Order = () => {
     if (!table) return window.alert("Please enter your table number.");
     if (orderItem.length === 0)
       return window.alert("Please add items to your order first.");
+    setSubmitting(true);
     try {
       const id = await saveOrderToFirestore();
       sendMail();
@@ -250,6 +254,8 @@ const Order = () => {
     } catch (err) {
       console.error("Order save error:", err);
       window.alert("Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -471,16 +477,28 @@ const Order = () => {
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="w-full text-white font-bold py-4 rounded-full transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] tracking-wide cursor-pointer border-none"
+                  disabled={submitting}
+                  className="w-full text-white font-bold py-4 rounded-full transition-all duration-300 tracking-wide cursor-pointer border-none disabled:opacity-70 flex items-center justify-center gap-3"
                   style={{ background: accent }}
-                  onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+                  onMouseEnter={(e) => {
+                    if (!submitting) e.currentTarget.style.opacity = "0.85";
+                  }}
                   onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                 >
-                  Confirm Order
-                  {totalCount > 0 && (
-                    <span className="ml-2 bg-white/20 text-xs font-black px-2 py-0.5 rounded-full">
-                      {totalCount} item{totalCount !== 1 ? "s" : ""}
-                    </span>
+                  {submitting ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Placing your order...
+                    </>
+                  ) : (
+                    <>
+                      Confirm Order
+                      {totalCount > 0 && (
+                        <span className="bg-white/20 text-xs font-black px-2 py-0.5 rounded-full">
+                          {totalCount} item{totalCount !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </>
                   )}
                 </button>
               </div>

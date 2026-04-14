@@ -3,6 +3,8 @@ import { useAuth } from "./AuthContext";
 import OrdersTab from "./OrdersTab";
 import MenuTab from "./MenuTab";
 import ProfileTab from "./ProfileTab";
+import AnalyticsTab from "./AnalyticsTab";
+import QRTab from "./QRTab";
 import { useRestaurant } from "../context/RestaurantContext";
 
 const AdminDashboard = () => {
@@ -55,6 +57,41 @@ const AdminDashboard = () => {
           strokeWidth="2"
         >
           <path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 20c0-4 3.6-7 8-7s8 3 8 7" />
+        </svg>
+      ),
+    },
+    {
+      key: "analytics",
+      label: "Analytics",
+      icon: (
+        <svg
+          className="w-3.5 h-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <line x1="18" y1="20" x2="18" y2="10" />
+          <line x1="12" y1="20" x2="12" y2="4" />
+          <line x1="6" y1="20" x2="6" y2="14" />
+        </svg>
+      ),
+    },
+    {
+      key: "qr",
+      label: "QR Codes",
+      icon: (
+        <svg
+          className="w-3.5 h-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <rect x="3" y="3" width="7" height="7" />
+          <rect x="14" y="3" width="7" height="7" />
+          <rect x="3" y="14" width="7" height="7" />
+          <rect x="14" y="14" width="3" height="3" />
         </svg>
       ),
     },
@@ -144,20 +181,30 @@ const AdminDashboard = () => {
               ? "Live Order Feed"
               : activeTab === "menu"
                 ? "Menu Management"
-                : "Restaurant Profile"}
+                : activeTab === "analytics"
+                  ? "Analytics"
+                  : activeTab === "qr"
+                    ? "QR Codes"
+                    : "Restaurant Profile"}
           </div>
           <h1 className="font-display text-4xl font-black text-white">
             {activeTab === "orders"
               ? "Orders"
               : activeTab === "menu"
                 ? "Menu"
-                : "Profile"}
+                : activeTab === "analytics"
+                  ? "Analytics"
+                  : activeTab === "qr"
+                    ? "QR Codes"
+                    : "Profile"}
           </h1>
         </div>
 
         {activeTab === "orders" && <OrdersTab />}
         {activeTab === "menu" && <MenuTab />}
         {activeTab === "profile" && <ProfileTab />}
+        {activeTab === "analytics" && <AnalyticsTab />}
+        {activeTab === "qr" && <QRTab />}
       </main>
     </div>
   );

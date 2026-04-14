@@ -8,15 +8,13 @@ const Landing = () => {
       <nav className="px-6 lg:px-16 h-20 flex items-center justify-between border-b border-white/5">
         <div className="flex items-center gap-0.5">
           <span className="font-display text-2xl font-black text-white">
-            TABLE
+            SERVRR
           </span>
-          <span className="font-display text-2xl font-black text-[#fa5631] italic">
-            flow.
-          </span>
+          <span className="font-display text-2xl font-black text-[#fa5631] italic"></span>
         </div>
         <div className="flex items-center gap-4">
           <a
-            href="mailto:hello@tableflow.com"
+            href="mailto:hello@servrr.com"
             className="text-white/50 hover:text-white text-sm transition-colors no-underline"
           >
             Contact
@@ -51,7 +49,7 @@ const Landing = () => {
         </h1>
 
         <p className="text-white/50 text-lg leading-relaxed max-w-2xl mb-10">
-          Tableflow gives your restaurant a digital ordering system, live order
+          SERVRR gives your restaurant a digital ordering system, live order
           tracking, and a real-time admin dashboard — all under your own brand.
           No app download. No technical setup.
         </p>
@@ -153,7 +151,7 @@ const Landing = () => {
       </div>
 
       <footer className="px-6 py-6 border-t border-white/5 text-center text-white/20 text-xs">
-        © {new Date().getFullYear()} Tableflow. Built for restaurants that mean
+        © {new Date().getFullYear()} SERVRR. Built for restaurants that mean
         business.
       </footer>
     </div>

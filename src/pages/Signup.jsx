@@ -4,7 +4,16 @@ import {
   createUserWithEmailAndPassword,
   sendEmailVerification,
 } from "firebase/auth";
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  collection,
+  query,
+  where,
+  serverTimestamp,
+} from "firebase/firestore";
 import { auth, db } from "../firebase/config";
 
 const generateSlug = (name) =>
@@ -172,6 +181,18 @@ const Signup = () => {
     setLoading(true);
 
     try {
+      // Check if email already has a restaurant account
+      const emailCheck = await getDocs(
+        query(collection(db, "users"), where("email", "==", email)),
+      );
+      if (!emailCheck.empty) {
+        setError(
+          "An account with this email already exists. Please log in instead.",
+        );
+        setLoading(false);
+        return;
+      }
+
       // Check slug availability
       const existingDoc = await getDoc(doc(db, "restaurants", slug));
       if (existingDoc.exists()) {
@@ -283,7 +304,7 @@ const Signup = () => {
               Your restaurant URL
             </p>
             <p className="font-mono text-sm" style={{ color: accentColor }}>
-              tableflow.com/<strong>{slug}</strong>
+              servrr.com/<strong>{slug}</strong>
             </p>
           </div>
           <Link
@@ -311,11 +332,9 @@ const Signup = () => {
             className="inline-flex items-center gap-0.5 no-underline mb-6"
           >
             <span className="font-display text-2xl font-black text-white">
-              TABLE
+              SERVRR
             </span>
-            <span className="font-display text-2xl font-black text-[#fa5631] italic">
-              flow.
-            </span>
+            <span className="font-display text-2xl font-black text-[#fa5631] italic"></span>
           </Link>
           <h1 className="font-display text-3xl font-black text-white mb-1">
             {step === 0 ? "Create your account" : "Brand your restaurant"}
@@ -371,7 +390,7 @@ const Signup = () => {
                       className="font-mono text-[10px]"
                       style={{ color: accentColor }}
                     >
-                      tableflow.com/<strong>{slug}</strong>
+                      servrr.com/<strong>{slug}</strong>
                     </span>
                   </div>
                 )}
