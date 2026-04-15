@@ -24,6 +24,7 @@ const Landing = lazy(() => import("./pages/Landing"));
 const Signup = lazy(() => import("./pages/Signup"));
 const Login = lazy(() => import("./pages/Login"));
 const SuperAdminDashboard = lazy(() => import("./pages/SuperAdminDashboard"));
+const Welcome = lazy(() => import("./pages/Welcome"));
 const Suspended = lazy(() => import("./pages/Suspended"));
 
 const PageLoader = () => (
@@ -113,6 +114,7 @@ const App = () => {
                 </SuperAdminRoute>
               }
             />
+            <Route path="/welcome" element={<Welcome />} />
             <Route path="/:restaurantId/*" element={<RestaurantRoutes />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

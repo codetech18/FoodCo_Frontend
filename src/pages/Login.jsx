@@ -54,7 +54,21 @@ const Login = () => {
       }
 
       const { restaurantId } = userDoc.data();
-      navigate(`/${restaurantId}/admin`);
+
+      // Check if this is a first login (account created within last 10 minutes)
+      const profileSnap = await getDoc(
+        doc(db, "restaurants", restaurantId, "profile", "info"),
+      );
+      const profile = profileSnap.exists() ? profileSnap.data() : {};
+      const createdAt = profile.createdAt?.toDate?.() || null;
+      const isFirstLogin =
+        createdAt && Date.now() - createdAt.getTime() < 10 * 60 * 1000;
+
+      if (isFirstLogin) {
+        navigate(`/welcome`);
+      } else {
+        navigate(`/${restaurantId}/admin`);
+      }
     } catch (err) {
       console.error(err);
       if (
