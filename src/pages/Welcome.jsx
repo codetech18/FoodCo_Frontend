@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, Navigate } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase/config";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "../admin/AuthContext";
 
 const Welcome = () => {
   const { admin, restaurantId, authLoading } = useAuth();
@@ -10,14 +10,12 @@ const Welcome = () => {
   const [profile, setProfile] = useState(null);
   const [copied, setCopied] = useState("");
 
-  // Redirect if auth is finished but no user is found
   useEffect(() => {
     if (!authLoading && !admin) {
       navigate("/login");
     }
   }, [authLoading, admin, navigate]);
 
-  // Fetch restaurant details once we have the ID
   useEffect(() => {
     if (!restaurantId || restaurantId === "superadmin") return;
 
@@ -28,7 +26,6 @@ const Welcome = () => {
     );
   }, [restaurantId]);
 
-  // STOPS BROKEN LINKS: Wait for Auth and RestaurantID to be ready
   if (authLoading || (!restaurantId && admin)) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -37,7 +34,6 @@ const Welcome = () => {
     );
   }
 
-  // Safety fallback if something goes wrong
   if (!restaurantId) return <Navigate to="/login" />;
 
   const accent = profile?.accentColor || "#fa5631";
@@ -53,63 +49,78 @@ const Welcome = () => {
   };
 
   const LinkCard = ({ label, url, urlKey, description, primary }) => (
-    <div className="bg-[#111111] border border-white/5 p-5 rounded-xl">
-      <div className="flex items-start justify-between gap-3 mb-3">
+    <div className="bg-[#111111] border border-white/5 p-6 rounded-3xl transition-all hover:border-white/10 group">
+      <div className="flex items-start justify-between mb-4">
         <div>
-          <p className="text-white font-bold text-sm mb-0.5">{label}</p>
-          <p className="text-white/30 text-xs">{description}</p>
+          <h3 className="font-display text-lg font-black uppercase italic tracking-tight text-white m-0">
+            {label}
+          </h3>
+          <p className="text-white/40 text-xs font-medium mt-1">
+            {description}
+          </p>
         </div>
         {primary && (
-          <span
-            className="text-[10px] font-black px-2 py-0.5 rounded-full flex-shrink-0"
-            style={{ background: `${accent}26`, color: accent }}
+          <div
+            className="text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-widest"
+            style={{ backgroundColor: `${accent}20`, color: accent }}
           >
-            SHARE THIS
-          </span>
+            Live Now
+          </div>
         )}
       </div>
-      <div className="flex items-center gap-2 bg-[#1a1a1a] border border-white/5 px-3 py-2.5 rounded-lg">
-        <span className="flex-1 font-mono text-xs text-white/60 truncate">
-          {url}
+
+      <div className="flex items-center gap-2 bg-[#0a0a0a] border border-white/5 p-2 pl-4 rounded-2xl group-hover:border-white/10 transition-all">
+        <span className="flex-1 font-mono text-[11px] text-white/40 truncate">
+          {url.replace(/^https?:\/\//, "")}
         </span>
         <button
           onClick={() => handleCopy(url, urlKey)}
-          className="text-[10px] font-semibold px-2.5 py-1 border transition-all cursor-pointer flex-shrink-0 rounded"
+          className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest cursor-pointer border-none transition-all active:scale-95"
           style={
             copied === urlKey
-              ? {
-                  background: "rgba(34,197,94,0.15)",
-                  borderColor: "rgba(34,197,94,0.3)",
-                  color: "#4ade80",
-                }
-              : {
-                  background: "transparent",
-                  borderColor: "rgba(255,255,255,0.1)",
-                  color: "rgba(255,255,255,0.4)",
-                }
+              ? { background: "#22c55e", color: "white" }
+              : { background: "#1a1a1a", color: "white" }
           }
         >
-          {copied === urlKey ? "✓ Copied" : "Copy"}
+          {copied === urlKey ? "Copied" : "Copy"}
         </button>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-lg">
-        <div className="text-center mb-8">
+    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-white/10 overflow-x-hidden">
+      {/* Background Decor */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div
+          className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full opacity-20"
+          style={{
+            backgroundImage: `radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)`,
+            backgroundSize: "40px 40px",
+          }}
+        />
+        <div
+          className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] blur-[120px] rounded-full opacity-10"
+          style={{
+            background: `radial-gradient(circle, ${accent} 0%, transparent 70%)`,
+          }}
+        />
+      </div>
+
+      <div className="relative z-10 max-w-2xl mx-auto px-6 py-20 lg:py-32">
+        {/* Success Header */}
+        <div className="text-center mb-16">
           <div
-            className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5 border"
-            style={{ background: `${accent}20`, borderColor: `${accent}40` }}
+            className="w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border rotate-12 transition-transform hover:rotate-0 duration-500"
+            style={{ background: `${accent}10`, borderColor: `${accent}30` }}
           >
             <svg
-              className="w-10 h-10"
+              className="w-8 h-8"
               style={{ color: accent }}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="3"
             >
               <path
                 d="M20 6L9 17l-5-5"
@@ -118,46 +129,61 @@ const Welcome = () => {
               />
             </svg>
           </div>
-          <h1 className="text-4xl font-black text-white mb-2 uppercase tracking-tighter">
-            You're live, {name}!
+
+          <h1 className="font-display text-5xl lg:text-7xl font-black uppercase italic tracking-tighter leading-none mb-4">
+            System <br /> <span style={{ color: accent }}>Deployed.</span>
           </h1>
-          <p className="text-white/40 text-sm">
-            Your dashboard and customer menu are ready.
+          <p className="text-white/40 text-sm font-bold uppercase tracking-[0.2em]">
+            Welcome to the future of {name}
           </p>
         </div>
 
-        <div className="space-y-4 mb-8">
+        {/* Action Grid */}
+        <div className="grid grid-cols-1 gap-4 mb-10">
           <LinkCard
-            label="Customer Menu"
+            label="Customer Storefront"
             url={customerUrl}
             urlKey="customer"
-            description="Give this URL to your guests so they can order."
+            description="The digital interface where your guests will browse and order."
             primary
           />
           <LinkCard
-            label="Admin Dashboard"
+            label="Kitchen Command"
             url={adminUrl}
             urlKey="admin"
-            description="Manage your orders and menu items here."
+            description="Your private dashboard to manage inventory and incoming orders."
           />
         </div>
 
-        <Link
-          to={`/${restaurantId}/admin`}
-          className="w-full flex items-center justify-center gap-2 text-white font-bold py-4 rounded-full no-underline transition-all hover:opacity-85 shadow-lg"
-          style={{ background: accent, boxShadow: `0 10px 30px ${accent}33` }}
-        >
-          Go to Dashboard
-          <svg
-            className="w-4 h-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
+        {/* Final CTA */}
+        <div className="flex flex-col items-center gap-6">
+          <Link
+            to={`/${restaurantId}/admin`}
+            className="w-full flex items-center justify-center gap-3 text-white font-black uppercase tracking-widest text-xs py-6 rounded-full no-underline transition-all hover:brightness-110 active:scale-[0.98]"
+            style={{
+              background: accent,
+              boxShadow: `0 20px 40px -10px ${accent}40`,
+            }}
           >
-            <path d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
-        </Link>
+            Open Dashboard
+            <svg
+              className="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+            >
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </Link>
+
+          <button
+            onClick={() => window.print()}
+            className="bg-transparent border-none text-white/20 hover:text-white/40 text-[10px] font-black uppercase tracking-widest cursor-pointer transition-colors"
+          >
+            Print Setup Summary
+          </button>
+        </div>
       </div>
     </div>
   );

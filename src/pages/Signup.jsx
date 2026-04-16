@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   createUserWithEmailAndPassword,
@@ -11,9 +11,10 @@ const Signup = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
-  // Form State
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -34,21 +35,41 @@ const Signup = () => {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "-")
     .replace(/-+/g, "-");
-
   const updateField = (field, value) =>
     setFormData((prev) => ({ ...prev, [field]: value }));
+
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadingLogo(true);
+    const data = new FormData();
+    data.append("file", file);
+    data.append("upload_preset", import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+    try {
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: "POST", body: data },
+      );
+      const fileData = await res.json();
+      updateField("logoUrl", fileData.secure_url);
+    } catch (err) {
+      setError("Logo upload failed.");
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
 
   const validateStep = () => {
     setError("");
     if (step === 1) {
       if (!formData.name || !formData.email || !formData.password)
-        return "All fields are required";
+        return "All fields required.";
       if (formData.password !== formData.confirmPassword)
-        return "Passwords do not match";
+        return "Passwords do not match.";
     }
     if (step === 2) {
       if (!formData.tagline || !formData.description)
-        return "Please add branding details";
+        return "Branding details required.";
     }
     return null;
   };
@@ -61,7 +82,9 @@ const Signup = () => {
 
   const handleSignup = async (e) => {
     e.preventDefault();
+    if (uploadingLogo) return;
     setLoading(true);
+    setError("");
     try {
       const { user } = await createUserWithEmailAndPassword(
         auth,
@@ -69,25 +92,22 @@ const Signup = () => {
         formData.password,
       );
       await sendEmailVerification(user);
-
-      // Save User Doc
       await setDoc(doc(db, "users", user.uid), {
         restaurantId: slug,
         email: formData.email,
         role: "owner",
       });
-
-      // Save Restaurant Profile
       await setDoc(doc(db, "restaurants", slug, "profile", "info"), {
         ...formData,
         restaurantId: slug,
         ownerUid: user.uid,
         createdAt: serverTimestamp(),
       });
-
       setStep(4);
     } catch (err) {
-      setError(err.message);
+      if (err.code === "auth/email-already-in-use")
+        setError("Email already exists.");
+      else setError(err.message);
     }
     setLoading(false);
   };
@@ -104,10 +124,9 @@ const Signup = () => {
             backgroundImage: `linear-gradient(45deg, ${accent} 0%, transparent 70%)`,
           }}
         />
-
         <Link
           to="/"
-          className="relative z-10 font-display text-2xl font-black italic"
+          className="relative z-10 font-display text-2xl font-black italic no-underline text-white"
         >
           SERVRR
         </Link>
@@ -117,7 +136,7 @@ const Signup = () => {
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-1 flex-1 rounded-full transition-all duration-500"
+                className="h-1 flex-1 rounded-full"
                 style={{
                   backgroundColor:
                     step >= i ? accent : "rgba(255,255,255,0.05)",
@@ -125,202 +144,238 @@ const Signup = () => {
               />
             ))}
           </div>
-          <h1 className="font-display text-4xl font-black uppercase italic leading-none mb-4">
-            {step === 1
-              ? "The Foundation"
-              : step === 2
-                ? "The Identity"
-                : "The Connection"}
+          <h1 className="font-display text-4xl font-black uppercase italic leading-none mb-4 tracking-tighter">
+            {step === 1 ? "The Build" : step === 2 ? "The Look" : "The Reach"}
           </h1>
-          <p className="text-white/40 text-sm leading-relaxed">
-            {step === 1
-              ? "Set up your secure owner account and claim your custom restaurant URL."
-              : step === 2
-                ? "Choose your colors and upload your logo to make the system truly yours."
-                : "Add your contact details so customers know where to find you."}
+          <p className="text-white/40 text-xs font-bold uppercase tracking-widest">
+            Step {step} of 3
           </p>
         </div>
 
-        <div className="relative z-10 bg-white/5 border border-white/5 p-4 rounded-2xl">
+        <div className="relative z-10 bg-white/5 border border-white/5 p-5 rounded-2xl">
           <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">
-            Live URL Preview
+            Endpoint Preview
           </p>
-          <p className="font-mono text-xs truncate" style={{ color: accent }}>
-            servrr.com/{slug || "your-restaurant"}
+          <p
+            className="font-mono text-xs truncate m-0"
+            style={{ color: accent }}
+          >
+            servrr.com/{slug || "..."}
           </p>
         </div>
       </div>
 
       {/* Form Panel */}
       <div className="flex-1 flex items-center justify-center p-8 overflow-y-auto">
-        <div className="w-full max-w-lg py-12">
+        <div className="w-full max-w-lg">
           {step < 4 ? (
-            <form onSubmit={handleSignup} className="space-y-8 transition-all">
-              {error && (
-                <div className="text-red-500 text-[10px] font-black uppercase tracking-widest">
-                  {error}
-                </div>
-              )}
-
-              {/* STEP 1: ACCOUNT */}
-              {step === 1 && (
-                <div className="space-y-6">
-                  <Input
-                    label="Restaurant Name"
-                    value={formData.name}
-                    onChange={(v) => updateField("name", v)}
-                    placeholder="Big Belly Burger"
-                  />
-                  <Input
-                    label="Business Email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(v) => updateField("email", v)}
-                    placeholder="hello@burger.com"
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input
-                      label="Password"
-                      type="password"
-                      value={formData.password}
-                      onChange={(v) => updateField("password", v)}
-                    />
-                    <Input
-                      label="Confirm"
-                      type="password"
-                      value={formData.confirmPassword}
-                      onChange={(v) => updateField("confirmPassword", v)}
-                    />
+            <>
+              <form onSubmit={handleSignup} className="space-y-8">
+                {error && (
+                  <div className="text-red-500 text-[10px] font-black uppercase tracking-widest bg-red-500/10 p-3 rounded-lg border border-red-500/20">
+                    {error}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* STEP 2: BRANDING */}
-              {step === 2 && (
-                <div className="space-y-6">
-                  <div className="flex items-center gap-6">
-                    <div className="w-20 h-20 rounded-3xl border border-white/5 flex items-center justify-center relative overflow-hidden bg-[#1a1a1a]">
-                      <input
-                        type="color"
-                        value={formData.accentColor}
+                {step === 1 && (
+                  <div className="space-y-6">
+                    <Input
+                      label="Restaurant Name"
+                      value={formData.name}
+                      onChange={(v) => updateField("name", v)}
+                    />
+                    <Input
+                      label="Owner Email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(v) => updateField("email", v)}
+                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input
+                        label="Password"
+                        type={showPassword ? "text" : "password"}
+                        value={formData.password}
+                        onChange={(v) => updateField("password", v)}
+                        showToggle
+                        onToggle={() => setShowPassword(!showPassword)}
+                        isToggled={showPassword}
+                      />
+                      <Input
+                        label="Confirm"
+                        type={showPassword ? "text" : "password"}
+                        value={formData.confirmPassword}
+                        onChange={(v) => updateField("confirmPassword", v)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {step === 2 && (
+                  <div className="space-y-8">
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">
+                          Identity Logo
+                        </label>
+                        <label className="flex flex-col items-center justify-center w-full h-32 bg-[#1a1a1a] border border-white/5 border-dashed rounded-2xl cursor-pointer hover:border-white/20 relative overflow-hidden transition-all">
+                          {uploadingLogo ? (
+                            <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                          ) : formData.logoUrl ? (
+                            <img
+                              src={formData.logoUrl}
+                              className="w-full h-full object-contain p-4"
+                            />
+                          ) : (
+                            <span className="text-[10px] font-black opacity-20 uppercase tracking-widest">
+                              Select File
+                            </span>
+                          )}
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept="image/*"
+                            onChange={handleLogoUpload}
+                          />
+                        </label>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">
+                          Accent Theme
+                        </label>
+                        <label
+                          htmlFor="accent-picker"
+                          className="flex flex-col items-center justify-center w-full h-32 bg-[#1a1a1a] border border-white/5 rounded-2xl cursor-pointer hover:border-white/20 transition-all"
+                        >
+                          <div
+                            className="w-8 h-8 rounded-full shadow-2xl"
+                            style={{ backgroundColor: accent }}
+                          />
+                          <span className="text-[10px] font-mono mt-3 opacity-40 uppercase">
+                            {accent}
+                          </span>
+                          <input
+                            id="accent-picker"
+                            type="color"
+                            className="hidden"
+                            value={accent}
+                            onChange={(e) =>
+                              updateField("accentColor", e.target.value)
+                            }
+                          />
+                        </label>
+                      </div>
+                    </div>
+                    <Input
+                      label="Tagline"
+                      value={formData.tagline}
+                      onChange={(v) => updateField("tagline", v)}
+                      placeholder="Best burgers in town."
+                    />
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">
+                        Description
+                      </label>
+                      <textarea
+                        value={formData.description}
                         onChange={(e) =>
-                          updateField("accentColor", e.target.value)
+                          updateField("description", e.target.value)
                         }
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                      />
-                      <div
-                        className="w-10 h-10 rounded-full shadow-lg"
-                        style={{ backgroundColor: accent }}
+                        className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl px-5 py-4 text-sm text-white focus:outline-none focus:border-white/20 transition-all h-24"
                       />
                     </div>
-                    <div>
-                      <p className="text-sm font-bold">Accent Color</p>
-                      <p className="text-xs text-white/30">
-                        Click swatch to pick your brand color.
-                      </p>
+                  </div>
+                )}
+
+                {step === 3 && (
+                  <div className="space-y-6">
+                    <Input
+                      label="Address"
+                      value={formData.address}
+                      onChange={(v) => updateField("address", v)}
+                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input
+                        label="Phone"
+                        value={formData.phone}
+                        onChange={(v) => updateField("phone", v)}
+                      />
+                      <Input
+                        label="Support Email"
+                        value={formData.contactEmail}
+                        onChange={(v) => updateField("contactEmail", v)}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input
+                        label="Instagram"
+                        value={formData.instagram}
+                        onChange={(v) => updateField("instagram", v)}
+                        placeholder="@username"
+                      />
+                      <Input
+                        label="Twitter"
+                        value={formData.twitter}
+                        onChange={(v) => updateField("twitter", v)}
+                        placeholder="@username"
+                      />
                     </div>
                   </div>
-                  <Input
-                    label="One-line Tagline"
-                    value={formData.tagline}
-                    onChange={(v) => updateField("tagline", v)}
-                    placeholder="The best burgers in Brooklyn."
-                  />
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-white/40">
-                      Description
-                    </label>
-                    <textarea
-                      value={formData.description}
-                      onChange={(e) =>
-                        updateField("description", e.target.value)
-                      }
-                      className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl px-5 py-4 text-sm h-32"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 3: CONTACT */}
-              {step === 3 && (
-                <div className="space-y-6">
-                  <Input
-                    label="Physical Address"
-                    value={formData.address}
-                    onChange={(v) => updateField("address", v)}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input
-                      label="Phone Number"
-                      value={formData.phone}
-                      onChange={(v) => updateField("phone", v)}
-                    />
-                    <Input
-                      label="Support Email"
-                      value={formData.contactEmail}
-                      onChange={(v) => updateField("contactEmail", v)}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input
-                      label="Instagram"
-                      value={formData.instagram}
-                      onChange={(v) => updateField("instagram", v)}
-                      placeholder="@username"
-                    />
-                    <Input
-                      label="Twitter"
-                      value={formData.twitter}
-                      onChange={(v) => updateField("twitter", v)}
-                      placeholder="@username"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-4 pt-6">
-                {step > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setStep(step - 1)}
-                    className="px-8 py-5 rounded-full font-black uppercase tracking-widest text-[10px] border border-white/10 hover:bg-white/5"
-                  >
-                    Back
-                  </button>
                 )}
-                {step < 3 ? (
-                  <button
-                    type="button"
-                    onClick={nextStep}
-                    className="flex-1 py-5 rounded-full font-black uppercase tracking-widest text-[10px]"
-                    style={{ backgroundColor: accent }}
-                  >
-                    Continue
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="flex-1 py-5 rounded-full font-black uppercase tracking-widest text-[10px]"
-                    style={{ backgroundColor: accent }}
-                  >
-                    {loading ? "Creating..." : "Launch Restaurant"}
-                  </button>
-                )}
-              </div>
-            </form>
+
+                <div className="flex gap-4 pt-4">
+                  {step > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setStep(step - 1)}
+                      className="px-10 py-5 rounded-full font-black uppercase tracking-widest text-[10px] border border-white/5 hover:bg-white/5 transition-all text-white cursor-pointer"
+                    >
+                      Back
+                    </button>
+                  )}
+                  {step < 3 ? (
+                    <button
+                      type="button"
+                      onClick={nextStep}
+                      disabled={uploadingLogo}
+                      className="flex-1 py-5 rounded-full font-black uppercase tracking-widest text-[10px] cursor-pointer border-none text-white transition-all active:scale-95"
+                      style={{ background: accent }}
+                    >
+                      Continue
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 py-5 rounded-full font-black uppercase tracking-widest text-[10px] cursor-pointer border-none text-white transition-all active:scale-95"
+                      style={{ background: accent }}
+                    >
+                      {loading ? "Launching..." : "Deploy System"}
+                    </button>
+                  )}
+                </div>
+              </form>
+              <p className="mt-10 text-center text-white/30 text-[10px] font-black uppercase tracking-widest">
+                Already registered?{" "}
+                <Link
+                  to="/login"
+                  className="no-underline"
+                  style={{ color: accent }}
+                >
+                  Login here
+                </Link>
+              </p>
+            </>
           ) : (
-            /* STEP 4: SUCCESS */
-            <div className="text-center space-y-6 animate-in fade-in zoom-in duration-700">
+            <div className="text-center">
               <div
-                className="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-10"
+                className="w-20 h-20 rounded-full mx-auto mb-8 flex items-center justify-center"
                 style={{
-                  backgroundColor: `${accent}20`,
+                  background: `${accent}20`,
                   border: `1px solid ${accent}40`,
                 }}
               >
                 <svg
-                  className="w-10 h-10"
+                  className="w-8 h-8"
                   style={{ color: accent }}
                   viewBox="0 0 24 24"
                   fill="none"
@@ -330,22 +385,18 @@ const Signup = () => {
                   <path d="M20 6L9 17l-5-5" />
                 </svg>
               </div>
-              <h2 className="font-display text-4xl font-black italic uppercase tracking-tighter">
-                Check your Email
+              <h2 className="font-display text-4xl font-black uppercase italic italic mb-4">
+                Verification Sent
               </h2>
-              <p className="text-white/40 text-sm max-w-sm mx-auto">
-                We've sent a verification link to{" "}
-                <span className="text-white font-bold">{formData.email}</span>.
-                Please verify to activate your dashboard.
+              <p className="text-white/40 text-sm mb-10">
+                Check your email to verify your restaurant account.
               </p>
-              <div className="pt-10">
-                <Link
-                  to="/login"
-                  className="px-10 py-5 rounded-full bg-white text-black font-black uppercase tracking-widest text-[10px] no-underline"
-                >
-                  Go to Login
-                </Link>
-              </div>
+              <Link
+                to="/login"
+                className="px-12 py-5 rounded-full bg-white text-black font-black uppercase tracking-widest text-[10px] no-underline"
+              >
+                Return to Login
+              </Link>
             </div>
           )}
         </div>
@@ -354,18 +405,38 @@ const Signup = () => {
   );
 };
 
-const Input = ({ label, type = "text", value, onChange, placeholder }) => (
-  <div className="space-y-2">
+const Input = ({
+  label,
+  type = "text",
+  value,
+  onChange,
+  placeholder,
+  showToggle,
+  onToggle,
+  isToggled,
+}) => (
+  <div className="space-y-2 relative">
     <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">
       {label}
     </label>
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl px-5 py-4 text-sm focus:outline-none focus:border-white/20 transition-all"
-    />
+    <div className="relative">
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl px-5 py-4 text-sm text-white focus:outline-none focus:border-white/20 transition-all placeholder-white/10"
+      />
+      {showToggle && (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-4 top-1/2 -translate-y-1/2 bg-transparent border-none text-[10px] font-black uppercase tracking-tighter text-white/20 hover:text-white cursor-pointer transition-all"
+        >
+          {isToggled ? "Hide" : "Show"}
+        </button>
+      )}
+    </div>
   </div>
 );
 
