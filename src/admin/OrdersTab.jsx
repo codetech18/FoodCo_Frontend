@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   collection,
   onSnapshot,
@@ -47,7 +47,6 @@ const formatTime = (ts) => {
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" });
 };
-
 const formatDate = (ts) => {
   if (!ts) return "—";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -57,13 +56,11 @@ const formatDate = (ts) => {
     year: "numeric",
   });
 };
-
 const getDateKey = (ts) => {
   if (!ts) return "Unknown";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toISOString().split("T")[0];
 };
-
 const formatDateKey = (key) => {
   if (key === "Unknown") return "Unknown Date";
   const d = new Date(key);
@@ -79,32 +76,165 @@ const formatDateKey = (key) => {
     year: "numeric",
   });
 };
-
 const groupByDate = (orders) => {
   const groups = {};
-  orders.forEach((order) => {
-    const key = getDateKey(order.createdAt);
+  orders.forEach((o) => {
+    const key = getDateKey(o.createdAt);
     if (!groups[key]) groups[key] = [];
-    groups[key].push(order);
+    groups[key].push(o);
   });
   return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
 };
+
+// ── New Order Toast ───────────────────────────────────────────────────────────
+const NewOrderToast = ({ order, accent, onDismiss }) => {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    // Slide in
+    requestAnimationFrame(() => setVisible(true));
+    // Auto dismiss after 8s
+    const timer = setTimeout(() => {
+      setVisible(false);
+      setTimeout(onDismiss, 400);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const dismiss = () => {
+    setVisible(false);
+    setTimeout(onDismiss, 400);
+  };
+
+  const itemCount = (order.items || []).reduce((s, i) => s + i.qty, 0);
+
+  return (
+    <div
+      className="flex items-start gap-3 w-full max-w-sm pointer-events-auto"
+      style={{
+        transform: visible ? "translateX(0)" : "translateX(110%)",
+        opacity: visible ? 1 : 0,
+        transition:
+          "transform 0.4s cubic-bezier(0.16,1,0.3,1), opacity 0.4s ease",
+      }}
+    >
+      <div
+        className="bg-[#111111] border shadow-2xl w-full overflow-hidden"
+        style={{
+          borderColor: `${accent}60`,
+          boxShadow: `0 8px 40px ${accent}20`,
+        }}
+      >
+        {/* Top accent bar */}
+        <div className="h-1 w-full" style={{ background: accent }} />
+
+        <div className="p-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              {/* Pulsing dot */}
+              <span className="relative flex h-2.5 w-2.5 flex-shrink-0 mt-0.5">
+                <span
+                  className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                  style={{ background: accent }}
+                />
+                <span
+                  className="relative inline-flex rounded-full h-2.5 w-2.5"
+                  style={{ background: accent }}
+                />
+              </span>
+              <p className="text-white font-bold text-sm">New Order!</p>
+            </div>
+            <button
+              onClick={dismiss}
+              className="text-white/30 hover:text-white bg-transparent border-none cursor-pointer flex-shrink-0 transition-colors"
+            >
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="space-y-1 mb-3">
+            <p className="text-white/80 text-xs">
+              <span className="font-semibold text-white">
+                {order.customerName || "Guest"}
+              </span>
+              {" · "}Table {order.table}
+            </p>
+            <p className="text-white/40 text-xs">
+              {itemCount} item{itemCount !== 1 ? "s" : ""} · ₦
+              {Number(order.total || 0).toLocaleString()}
+            </p>
+            {order.items?.slice(0, 3).map((item, i) => (
+              <p key={i} className="text-white/30 text-xs truncate">
+                {item.qty}× {item.name}
+              </p>
+            ))}
+            {(order.items?.length || 0) > 3 && (
+              <p className="text-white/20 text-xs">
+                +{order.items.length - 3} more
+              </p>
+            )}
+          </div>
+
+          {/* Progress bar — shows time remaining */}
+          <div className="h-0.5 bg-white/10 overflow-hidden rounded-full">
+            <div
+              className="h-full rounded-full origin-left"
+              style={{
+                background: accent,
+                animation: "shrink 8s linear forwards",
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes shrink {
+          from { transform: scaleX(1); }
+          to   { transform: scaleX(0); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+// ── Toast Container ───────────────────────────────────────────────────────────
+const ToastContainer = ({ toasts, accent, onDismiss }) => (
+  <div
+    className="fixed bottom-6 right-6 z-[100] flex flex-col-reverse gap-3 pointer-events-none"
+    style={{ maxWidth: "360px", width: "calc(100vw - 3rem)" }}
+  >
+    {toasts.map((t) => (
+      <NewOrderToast
+        key={t.id}
+        order={t}
+        accent={accent}
+        onDismiss={() => onDismiss(t.id)}
+      />
+    ))}
+  </div>
+);
 
 // ── Order Card ────────────────────────────────────────────────────────────────
 const OrderCard = ({ order, isNew, updateStatus, deleteOrder, accent }) => {
   const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
   return (
     <div
-      className={`bg-[#111111] border transition-all duration-500 ${
-        isNew ? "shadow-lg" : "border-white/5 hover:border-white/10"
-      }`}
+      className={`bg-[#111111] border transition-all duration-500 ${isNew ? "shadow-lg" : "border-white/5 hover:border-white/10"}`}
       style={
         isNew
           ? { borderColor: accent, boxShadow: `0 4px 24px ${accent}1a` }
           : {}
       }
     >
-      {/* Card header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
         <div className="flex items-center gap-3">
           {isNew && (
@@ -155,8 +285,6 @@ const OrderCard = ({ order, isNew, updateStatus, deleteOrder, accent }) => {
           </button>
         </div>
       </div>
-
-      {/* Card body */}
       <div className="px-5 py-4 grid md:grid-cols-3 gap-4">
         <div className="md:col-span-2">
           <p className="text-white/30 text-[10px] font-semibold tracking-widest uppercase mb-2">
@@ -206,8 +334,6 @@ const OrderCard = ({ order, isNew, updateStatus, deleteOrder, accent }) => {
           </div>
         </div>
       </div>
-
-      {/* Pipeline button */}
       {order.status !== "completed" && (
         <div className="px-5 py-3 border-t border-white/5 flex justify-end">
           <button
@@ -244,7 +370,35 @@ const OrdersTab = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("pending");
   const [newOrderIds, setNewOrderIds] = useState(new Set());
-  const prevOrderIds = React.useRef(new Set());
+  const [toasts, setToasts] = useState([]);
+  const prevOrderIds = useRef(new Set());
+  const isFirstLoad = useRef(true);
+
+  const playSound = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // Two-tone chime: pleasant and noticeable
+      [880, 1100].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.15);
+        gain.gain.linearRampToValueAtTime(
+          0.35,
+          ctx.currentTime + i * 0.15 + 0.05,
+        );
+        gain.gain.exponentialRampToValueAtTime(
+          0.001,
+          ctx.currentTime + i * 0.15 + 0.5,
+        );
+        osc.start(ctx.currentTime + i * 0.15);
+        osc.stop(ctx.currentTime + i * 0.15 + 0.5);
+      });
+    } catch (_) {}
+  };
 
   useEffect(() => {
     const q = query(
@@ -254,40 +408,37 @@ const OrdersTab = () => {
     const unsub = onSnapshot(q, (snap) => {
       const incoming = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      if (!loading) {
-        const newIds = new Set();
-        incoming.forEach((o) => {
-          if (!prevOrderIds.current.has(o.id)) newIds.add(o.id);
-        });
-        if (newIds.size > 0) {
-          setNewOrderIds(newIds);
-          try {
-            const ctx = new (
-              window.AudioContext || window.webkitAudioContext
-            )();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.frequency.value = 880;
-            gain.gain.setValueAtTime(0.3, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(
-              0.001,
-              ctx.currentTime + 0.4,
-            );
-            osc.start();
-            osc.stop(ctx.currentTime + 0.4);
-          } catch (_) {}
-          setTimeout(() => setNewOrderIds(new Set()), 3000);
+      if (!isFirstLoad.current) {
+        const newItems = incoming.filter(
+          (o) => !prevOrderIds.current.has(o.id),
+        );
+        if (newItems.length > 0) {
+          // Play two-tone chime
+          playSound();
+
+          // Add toasts for each new order
+          setToasts((prev) => [
+            ...prev,
+            ...newItems.map((o) => ({ ...o, _toastId: o.id })),
+          ]);
+
+          // Highlight cards briefly
+          setNewOrderIds(new Set(newItems.map((o) => o.id)));
+          setTimeout(() => setNewOrderIds(new Set()), 4000);
         }
       }
 
       prevOrderIds.current = new Set(incoming.map((o) => o.id));
       setOrders(incoming);
       setLoading(false);
+      isFirstLoad.current = false;
     });
     return unsub;
   }, [restaurantId]);
+
+  const dismissToast = (toastId) => {
+    setToasts((prev) => prev.filter((t) => t._toastId !== toastId));
+  };
 
   const updateStatus = async (id, nextStatus) => {
     await updateDoc(doc(db, "restaurants", restaurantId, "orders", id), {
@@ -303,7 +454,6 @@ const OrdersTab = () => {
 
   const filtered =
     filter === "all" ? orders : orders.filter((o) => o.status === filter);
-
   const counts = {
     all: orders.length,
     pending: orders.filter((o) => o.status === "pending").length,
@@ -325,131 +475,138 @@ const OrdersTab = () => {
   const groupedOrders = groupByDate(filtered);
 
   return (
-    <div>
-      {/* Filter tabs */}
-      <div className="flex items-center gap-2 flex-wrap mb-6">
-        {[
-          { key: "pending", label: "Pending" },
-          { key: "in_progress", label: "In Progress" },
-          { key: "ready", label: "Ready" },
-          { key: "completed", label: "Completed" },
-          { key: "all", label: "All" },
-        ].map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setFilter(key)}
-            className="px-3 py-1.5 text-xs font-semibold tracking-wide border transition-all cursor-pointer flex items-center gap-1.5"
-            style={
-              filter === key
-                ? { background: accent, borderColor: accent, color: "white" }
-                : {
-                    background: "transparent",
-                    borderColor: "rgba(255,255,255,0.1)",
-                    color: "rgba(255,255,255,0.4)",
-                  }
-            }
-            onMouseEnter={(e) => {
-              if (filter !== key) {
-                e.currentTarget.style.color = "white";
-                e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (filter !== key) {
-                e.currentTarget.style.color = "rgba(255,255,255,0.4)";
-                e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
-              }
-            }}
-          >
-            {label}
-            <span
-              className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+    <>
+      {/* Toast notifications */}
+      <ToastContainer
+        toasts={toasts}
+        accent={accent}
+        onDismiss={dismissToast}
+      />
+
+      <div>
+        {/* Filter tabs */}
+        <div className="flex items-center gap-2 flex-wrap mb-6">
+          {[
+            { key: "pending", label: "Pending" },
+            { key: "in_progress", label: "In Progress" },
+            { key: "ready", label: "Ready" },
+            { key: "completed", label: "Completed" },
+            { key: "all", label: "All" },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className="px-3 py-1.5 text-xs font-semibold tracking-wide border transition-all cursor-pointer flex items-center gap-1.5"
               style={
                 filter === key
-                  ? { background: "rgba(255,255,255,0.2)", color: "white" }
+                  ? { background: accent, borderColor: accent, color: "white" }
                   : {
-                      background: "rgba(255,255,255,0.08)",
+                      background: "transparent",
+                      borderColor: "rgba(255,255,255,0.1)",
                       color: "rgba(255,255,255,0.4)",
                     }
               }
+              onMouseEnter={(e) => {
+                if (filter !== key) {
+                  e.currentTarget.style.color = "white";
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (filter !== key) {
+                  e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+                }
+              }}
             >
-              {counts[key]}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="text-center py-24 text-white/20 text-sm">
-          No {filter === "all" ? "" : filter.replace("_", " ")} orders yet
-        </div>
-      ) : filter === "all" ? (
-        // Grouped by date
-        <div className="space-y-10">
-          {groupedOrders.map(([dateKey, dayOrders]) => {
-            const dayTotal = dayOrders
-              .filter((o) => o.status === "completed")
-              .reduce((sum, o) => sum + Number(o.total || 0), 0);
-            return (
-              <div key={dateKey}>
-                <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/8">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-2 h-2 rounded-full"
-                      style={{ background: accent }}
-                    />
-                    <h3 className="text-white font-bold text-base">
-                      {formatDateKey(dateKey)}
-                    </h3>
-                    <span className="text-white/30 text-xs border border-white/10 px-2 py-0.5">
-                      {dayOrders.length} order
-                      {dayOrders.length !== 1 ? "s" : ""}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-white/30 text-xs font-semibold uppercase tracking-wide">
-                      Revenue
-                    </span>
-                    <span
-                      className="font-black text-sm"
-                      style={{ color: accent }}
-                    >
-                      ₦{dayTotal.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  {dayOrders.map((order) => (
-                    <OrderCard
-                      key={order.id}
-                      order={order}
-                      isNew={newOrderIds.has(order.id)}
-                      updateStatus={updateStatus}
-                      deleteOrder={deleteOrder}
-                      accent={accent}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        // Normal list
-        <div className="space-y-4">
-          {filtered.map((order) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              isNew={newOrderIds.has(order.id)}
-              updateStatus={updateStatus}
-              deleteOrder={deleteOrder}
-              accent={accent}
-            />
+              {label}
+              <span
+                className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+                style={
+                  filter === key
+                    ? { background: "rgba(255,255,255,0.2)", color: "white" }
+                    : {
+                        background: "rgba(255,255,255,0.08)",
+                        color: "rgba(255,255,255,0.4)",
+                      }
+                }
+              >
+                {counts[key]}
+              </span>
+            </button>
           ))}
         </div>
-      )}
-    </div>
+
+        {filtered.length === 0 ? (
+          <div className="text-center py-24 text-white/20 text-sm">
+            No {filter === "all" ? "" : filter.replace("_", " ")} orders yet
+          </div>
+        ) : filter === "all" ? (
+          <div className="space-y-10">
+            {groupedOrders.map(([dateKey, dayOrders]) => {
+              const dayTotal = dayOrders
+                .filter((o) => o.status === "completed")
+                .reduce((sum, o) => sum + Number(o.total || 0), 0);
+              return (
+                <div key={dateKey}>
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/8">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-2 h-2 rounded-full"
+                        style={{ background: accent }}
+                      />
+                      <h3 className="text-white font-bold text-base">
+                        {formatDateKey(dateKey)}
+                      </h3>
+                      <span className="text-white/30 text-xs border border-white/10 px-2 py-0.5">
+                        {dayOrders.length} order
+                        {dayOrders.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-white/30 text-xs font-semibold uppercase tracking-wide">
+                        Revenue
+                      </span>
+                      <span
+                        className="font-black text-sm"
+                        style={{ color: accent }}
+                      >
+                        ₦{dayTotal.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    {dayOrders.map((order) => (
+                      <OrderCard
+                        key={order.id}
+                        order={order}
+                        isNew={newOrderIds.has(order.id)}
+                        updateStatus={updateStatus}
+                        deleteOrder={deleteOrder}
+                        accent={accent}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filtered.map((order) => (
+              <OrderCard
+                key={order.id}
+                order={order}
+                isNew={newOrderIds.has(order.id)}
+                updateStatus={updateStatus}
+                deleteOrder={deleteOrder}
+                accent={accent}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 };
 

@@ -1,129 +1,153 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   createUserWithEmailAndPassword,
   sendEmailVerification,
-  deleteUser,
 } from "firebase/auth";
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "../firebase"; // Adjust path to your firebase config
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "../firebase/config";
 
 const Signup = () => {
   const navigate = useNavigate();
-  const accent = "#fa5631";
-
-  // --- State ---
+  // We now only have 3 steps: 1 (Account), 2 (Brand & Contact), 3 (Success)
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     password: "",
-    tagline: "",
+    confirmPassword: "",
     accentColor: "#fa5631",
+    tagline: "",
+    description: "",
     logoUrl: "",
+    address: "",
+    phone: "",
+    contactEmail: "",
+    instagram: "",
+    twitter: "",
   });
 
-  // --- Helper: Slug Generation ---
-  const generateSlug = (name) => {
-    return name
-      .toLowerCase()
-      .trim()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/[\s_-]+/g, "-")
-      .replace(/^-+|-+$/g, "");
+  const slug = formData.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "-")
+    .replace(/-+/g, "-");
+
+  const updateField = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const slug = generateSlug(formData.name);
-
-  // --- Logic: Handle Logo Upload (Cloudinary Example) ---
   const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Enforce 2MB size limit
+    if (file.size > 2 * 1024 * 1024) {
+      return setError(
+        "Image size exceeds the 2MB limit. Please choose a smaller file.",
+      );
+    }
+
     setUploadingLogo(true);
+    setError("");
     const data = new FormData();
     data.append("file", file);
-    data.append("upload_preset", "your_preset"); // Replace with your preset
+    data.append("upload_preset", import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
 
     try {
       const res = await fetch(
-        "https://api.cloudinary.com/v1_1/your_cloud_name/image/upload",
-        {
-          method: "POST",
-          body: data,
-        },
+        `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: "POST", body: data },
       );
       const fileData = await res.json();
-      setFormData({ ...formData, logoUrl: fileData.secure_url });
+      updateField("logoUrl", fileData.secure_url || "");
     } catch (err) {
-      setError("Image upload failed. Please try again.");
+      setError("Logo upload failed. Please try again.");
     } finally {
       setUploadingLogo(false);
     }
   };
 
-  // --- Logic: Main Signup & Database Sync ---
+  const validateStep = () => {
+    setError("");
+    if (step === 1) {
+      if (!formData.name || !formData.email || !formData.password)
+        return "All account fields are required.";
+      if (formData.password !== formData.confirmPassword)
+        return "Passwords do not match.";
+      if (formData.password.length < 6)
+        return "Password must be at least 6 characters.";
+    }
+    if (step === 2) {
+      // Logo is optional, so we don't check it here.
+      if (!formData.tagline || !formData.description)
+        return "Please provide a tagline and description.";
+      if (!formData.address || !formData.phone || !formData.contactEmail)
+        return "Please provide your primary contact and location details.";
+    }
+    return null;
+  };
+
+  const nextStep = () => {
+    const err = validateStep();
+    if (err) return setError(err);
+    setStep((prev) => prev + 1);
+  };
+
   const handleSignup = async (e) => {
     e.preventDefault();
     if (uploadingLogo) return;
+
+    const err = validateStep();
+    if (err) return setError(err);
+
     setLoading(true);
     setError("");
 
     try {
-      // 1. Check for Slug Collision (Does restaurant already exist?)
-      const slugRef = doc(db, "restaurants", slug);
-      const slugSnap = await getDoc(slugRef);
-
-      if (slugSnap.exists()) {
-        setLoading(false);
-        return setError(
-          "This restaurant name is already taken. Please try a different name.",
-        );
-      }
-
-      // 2. Create Auth User
-      const userCredential = await createUserWithEmailAndPassword(
+      // 1. Create Auth User
+      const { user } = await createUserWithEmailAndPassword(
         auth,
         formData.email,
         formData.password,
       );
-      const newUser = userCredential.user;
 
-      // 3. Nested Try-Catch for Firestore (The Rollback Logic)
-      try {
-        await sendEmailVerification(newUser);
+      // 2. Send Verification
+      await sendEmailVerification(user);
 
-        // Map UID to Restaurant Slug
-        await setDoc(doc(db, "users", newUser.uid), {
-          restaurantId: slug,
-          email: formData.email,
-          role: "owner",
-          createdAt: serverTimestamp(),
-        });
+      // 3. Force sign out to prevent the "unverified limbo" trap
+      await auth.signOut();
 
-        // Initialize Restaurant Profile
-        await setDoc(doc(db, "restaurants", slug, "profile", "info"), {
-          restaurantId: slug,
-          ownerUid: newUser.uid,
-          name: formData.name,
-          email: formData.email,
-          tagline: formData.tagline,
-          accentColor: formData.accentColor,
-          logoUrl: formData.logoUrl,
-          status: "active",
-          createdAt: serverTimestamp(),
-        });
+      // 4. Map User to Restaurant
+      await setDoc(doc(db, "users", user.uid), {
+        restaurantId: slug,
+        email: formData.email,
+        role: "owner",
+      });
 
-        setStep(4); // Move to success step
-      } catch (firestoreErr) {
-        // ROLLBACK: If DB fails, delete the newly created Auth user
-        if (newUser) await deleteUser(newUser);
-        throw new Error("Account synchronization failed. Please try again.");
-      }
+      // 5. Save Restaurant Profile
+      await setDoc(doc(db, "restaurants", slug, "profile", "info"), {
+        restaurantId: slug,
+        ownerUid: user.uid,
+        name: formData.name || "",
+        email: formData.email || "",
+        accentColor: formData.accentColor || "#fa5631",
+        tagline: formData.tagline || "",
+        description: formData.description || "",
+        logoUrl: formData.logoUrl || "",
+        address: formData.address || "",
+        phone: formData.phone || "",
+        contactEmail: formData.contactEmail || "",
+        instagram: formData.instagram || "",
+        twitter: formData.twitter || "",
+        createdAt: serverTimestamp(),
+      });
+
+      setStep(3); // Move to Success Screen
     } catch (err) {
       if (err.code === "auth/email-already-in-use") {
         setError("This email is already registered.");
@@ -135,275 +159,376 @@ const Signup = () => {
     }
   };
 
+  const accent = formData.accentColor;
+
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans flex flex-col">
-      {/* Top Bar */}
-      <nav className="p-6">
-        <span className="font-display text-2xl font-black text-white italic">
+    <div className="min-h-screen bg-[#0a0a0a] flex flex-col lg:flex-row font-sans text-white">
+      {/* LEFT PANEL */}
+      <div className="lg:w-[35%] bg-[#111] p-12 border-r border-white/5 flex flex-col justify-between relative overflow-hidden">
+        <div
+          className="absolute inset-0 opacity-10"
+          style={{
+            backgroundImage: `linear-gradient(45deg, ${accent} 0%, transparent 70%)`,
+          }}
+        />
+
+        <Link
+          to="/"
+          className="relative z-10 font-display text-2xl font-black italic no-underline text-white"
+        >
           SERVRR
-        </span>
-      </nav>
+        </Link>
 
-      <main className="flex-1 flex items-center justify-center px-6 pb-12">
-        <div className="w-full max-w-md">
-          {/* Progress Indicator */}
-          {step < 4 && (
-            <div className="flex gap-2 mb-8">
-              {[1, 2, 3].map((s) => (
-                <div
-                  key={s}
-                  className={`h-1 flex-1 rounded-full transition-all duration-500 ${step >= s ? "bg-[#fa5631]" : "bg-white/10"}`}
-                />
-              ))}
-            </div>
-          )}
-
-          {step === 1 && (
-            <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <h1 className="font-display text-4xl font-black uppercase italic tracking-tighter mb-2">
-                Create Account
-              </h1>
-              <p className="text-white/40 text-sm mb-8">
-                Start your 14-day free trial. No credit card required.
-              </p>
-
-              <div className="space-y-4">
-                <Input
-                  label="Restaurant Name"
-                  value={formData.name}
-                  onChange={(v) => setFormData({ ...formData, name: v })}
-                  placeholder="e.g. The Golden Grill"
-                />
-                <Input
-                  label="Email Address"
-                  type="email"
-                  value={formData.email}
-                  onChange={(v) => setFormData({ ...formData, email: v })}
-                  placeholder="owner@restaurant.com"
-                />
-                <Input
-                  label="Password"
-                  type="password"
-                  value={formData.password}
-                  onChange={(v) => setFormData({ ...formData, password: v })}
-                  placeholder="••••••••"
-                />
-                <button
-                  disabled={
-                    !formData.name ||
-                    !formData.email ||
-                    formData.password.length < 6
-                  }
-                  onClick={() => setStep(2)}
-                  className="w-full py-4 mt-4 rounded-2xl bg-white text-black font-black uppercase tracking-widest text-[10px] hover:bg-white/90 transition-all disabled:opacity-20"
-                >
-                  Continue to Branding
-                </button>
-              </div>
-            </section>
-          )}
-
-          {step === 2 && (
-            <section className="animate-in fade-in slide-in-from-right-4 duration-500">
-              <h1 className="font-display text-4xl font-black uppercase italic tracking-tighter mb-2">
-                Your Brand
-              </h1>
-              <p className="text-white/40 text-sm mb-8">
-                Customize how customers see your digital menu.
-              </p>
-
-              <div className="space-y-4">
-                <Input
-                  label="Tagline"
-                  value={formData.tagline}
-                  onChange={(v) => setFormData({ ...formData, tagline: v })}
-                  placeholder="e.g. Authentic Italian Cuisine"
-                />
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1">
-                    Accent Color
-                  </label>
-                  <div className="flex gap-3">
-                    <input
-                      type="color"
-                      value={formData.accentColor}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          accentColor: e.target.value,
-                        })
-                      }
-                      className="w-12 h-12 bg-transparent border-none cursor-pointer"
-                    />
-                    <div className="flex-1 bg-[#1a1a1a] border border-white/5 rounded-xl flex items-center px-4 text-xs font-mono text-white/60">
-                      {formData.accentColor.toUpperCase()}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1">
-                    Restaurant Logo
-                  </label>
-                  <label className="block w-full cursor-pointer group">
-                    <div className="w-full bg-[#1a1a1a] border border-dashed border-white/10 rounded-2xl p-8 flex flex-col items-center justify-center group-hover:border-white/20 transition-all">
-                      {formData.logoUrl ? (
-                        <img
-                          src={formData.logoUrl}
-                          alt="Logo"
-                          className="h-12 w-12 object-contain"
-                        />
-                      ) : (
-                        <>
-                          <svg
-                            className="w-6 h-6 text-white/20 mb-2"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M12 4v16m8-8H4"
-                            />
-                          </svg>
-                          <span className="text-[10px] text-white/20 font-bold uppercase tracking-widest">
-                            {uploadingLogo ? "Uploading..." : "Upload PNG/JPG"}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <input
-                      type="file"
-                      className="hidden"
-                      onChange={handleLogoUpload}
-                      accept="image/*"
-                    />
-                  </label>
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    onClick={() => setStep(1)}
-                    className="flex-1 py-4 rounded-2xl border border-white/5 text-[10px] font-black uppercase tracking-widest"
-                  >
-                    Back
-                  </button>
-                  <button
-                    onClick={() => setStep(3)}
-                    className="flex-[2] py-4 rounded-2xl bg-white text-black font-black uppercase tracking-widest text-[10px]"
-                  >
-                    Review
-                  </button>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {step === 3 && (
-            <section className="animate-in fade-in zoom-in-95 duration-500">
-              <h1 className="font-display text-4xl font-black uppercase italic tracking-tighter mb-2">
-                Confirm
-              </h1>
-              <p className="text-white/40 text-sm mb-8">
-                Ready to launch {formData.name}?
-              </p>
-
-              <div className="bg-[#111] border border-white/5 rounded-3xl p-6 mb-8 space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] uppercase font-bold text-white/20">
-                    URL
-                  </span>
-                  <span className="text-xs font-mono text-[#fa5631]">
-                    servrr.com/{slug}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] uppercase font-bold text-white/20">
-                    Email
-                  </span>
-                  <span className="text-xs text-white/60">
-                    {formData.email}
-                  </span>
-                </div>
-              </div>
-
-              {error && (
-                <p className="text-red-500 text-[10px] font-bold uppercase text-center mb-4 italic">
-                  {error}
-                </p>
-              )}
-
-              <button
-                onClick={handleSignup}
-                disabled={loading}
-                className="w-full py-5 rounded-full bg-[#fa5631] text-white font-black uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3"
-              >
-                {loading ? (
-                  <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                ) : (
-                  "Launch My Restaurant"
-                )}
-              </button>
-
-              <button
-                onClick={() => setStep(2)}
-                className="w-full mt-4 text-[10px] font-black text-white/20 uppercase tracking-widest"
-              >
-                Edit Details
-              </button>
-            </section>
-          )}
-
-          {step === 4 && (
-            <section className="text-center animate-in fade-in zoom-in-95 duration-700">
-              <div className="w-20 h-20 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mx-auto mb-8">
-                <svg
-                  className="w-10 h-10"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth="3"
-                >
-                  <path d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <h1 className="font-display text-5xl font-black uppercase italic tracking-tighter mb-4">
-                You're In.
-              </h1>
-              <p className="text-white/40 text-sm mb-10 leading-relaxed">
-                Account created successfully. Check your email for a
-                verification link to activate your dashboard.
-              </p>
-              <button
-                onClick={() => navigate("/admin")}
-                className="w-full py-5 rounded-full bg-white text-black font-black uppercase tracking-[0.2em] text-xs"
-              >
-                Go to Dashboard
-              </button>
-            </section>
+        <div className="relative z-10">
+          <div className="flex gap-2 mb-8">
+            {/* Now only 2 steps before success */}
+            {[1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-1 flex-1 rounded-full transition-all duration-500"
+                style={{
+                  backgroundColor:
+                    step >= i ? accent : "rgba(255,255,255,0.05)",
+                }}
+              />
+            ))}
+          </div>
+          <h1 className="font-display text-4xl font-black uppercase italic leading-none mb-4 tracking-tighter">
+            {step === 1
+              ? "The Build"
+              : step === 2
+                ? "The Details"
+                : "The Reach"}
+          </h1>
+          {step < 3 && (
+            <p className="text-white/40 text-xs font-bold uppercase tracking-widest">
+              Step {step} of 2
+            </p>
           )}
         </div>
-      </main>
+
+        <div className="relative z-10 bg-white/5 border border-white/5 p-5 rounded-2xl">
+          <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">
+            Endpoint Preview
+          </p>
+          <p
+            className="font-mono text-xs truncate m-0 transition-colors duration-300"
+            style={{ color: accent }}
+          >
+            servrr.com/{slug || "..."}
+          </p>
+        </div>
+      </div>
+
+      {/* RIGHT PANEL */}
+      <div className="flex-1 flex items-center justify-center p-8 overflow-y-auto">
+        <div className="w-full max-w-xl">
+          {step < 3 ? (
+            <>
+              <form
+                onSubmit={step === 2 ? handleSignup : (e) => e.preventDefault()}
+                className="space-y-8"
+              >
+                {error && (
+                  <div className="text-red-500 text-[10px] font-black uppercase tracking-widest bg-red-500/10 p-4 rounded-xl border border-red-500/20 text-center">
+                    {error}
+                  </div>
+                )}
+
+                {/* STEP 1: ACCOUNT DETAILS */}
+                {step === 1 && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <Input
+                      label="Restaurant Name"
+                      value={formData.name}
+                      onChange={(v) => updateField("name", v)}
+                      placeholder="e.g. The Chopz"
+                    />
+                    <Input
+                      label="Owner Email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(v) => updateField("email", v)}
+                      placeholder="admin@restaurant.com"
+                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input
+                        label="Password"
+                        type={showPassword ? "text" : "password"}
+                        value={formData.password}
+                        onChange={(v) => updateField("password", v)}
+                        showToggle
+                        onToggle={() => setShowPassword(!showPassword)}
+                        isToggled={showPassword}
+                      />
+                      <Input
+                        label="Confirm Password"
+                        type={showPassword ? "text" : "password"}
+                        value={formData.confirmPassword}
+                        onChange={(v) => updateField("confirmPassword", v)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 2: BRANDING & CONTACT MERGED */}
+                {step === 2 && (
+                  <div className="space-y-10 animate-in fade-in slide-in-from-right-4 duration-500">
+                    {/* Block A: Brand Identity */}
+                    <div className="space-y-6">
+                      <h3 className="text-white/30 text-[10px] font-black uppercase tracking-[0.2em] border-b border-white/5 pb-2">
+                        1. Brand Identity
+                      </h3>
+
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">
+                            Logo Upload
+                          </label>
+                          <label className="flex flex-col items-center justify-center w-full h-32 bg-[#1a1a1a] border border-white/5 border-dashed rounded-2xl cursor-pointer hover:border-white/20 relative overflow-hidden transition-all p-2">
+                            {uploadingLogo ? (
+                              <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                            ) : formData.logoUrl ? (
+                              <img
+                                src={formData.logoUrl}
+                                className="w-full h-full object-contain p-2"
+                                alt="Logo preview"
+                              />
+                            ) : (
+                              <div className="text-center flex flex-col items-center">
+                                <span className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-1 text-white">
+                                  Upload (Optional)
+                                </span>
+                                <span className="text-[8px] font-bold opacity-30 uppercase tracking-widest text-white">
+                                  500x500px • Max 2MB
+                                </span>
+                              </div>
+                            )}
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept="image/*"
+                              onChange={handleLogoUpload}
+                            />
+                          </label>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">
+                            Accent Theme
+                          </label>
+                          <label
+                            htmlFor="accent-picker"
+                            className="flex flex-col items-center justify-center w-full h-32 bg-[#1a1a1a] border border-white/5 rounded-2xl cursor-pointer hover:border-white/20 transition-all"
+                          >
+                            <div
+                              className="w-8 h-8 rounded-full shadow-2xl"
+                              style={{ backgroundColor: accent }}
+                            />
+                            <span className="text-[10px] font-mono mt-3 opacity-40 uppercase">
+                              {accent}
+                            </span>
+                            <input
+                              id="accent-picker"
+                              type="color"
+                              className="hidden"
+                              value={accent}
+                              onChange={(e) =>
+                                updateField("accentColor", e.target.value)
+                              }
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <Input
+                        label="One-line Tagline"
+                        value={formData.tagline}
+                        onChange={(v) => updateField("tagline", v)}
+                        placeholder="e.g. The best steak in town."
+                      />
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">
+                          Description
+                        </label>
+                        <textarea
+                          value={formData.description}
+                          onChange={(e) =>
+                            updateField("description", e.target.value)
+                          }
+                          placeholder="Tell your customers a bit about your restaurant..."
+                          className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl px-5 py-4 text-sm text-white focus:outline-none focus:border-white/20 transition-all h-24 resize-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Block B: Contact & Location */}
+                    <div className="space-y-6">
+                      <h3 className="text-white/30 text-[10px] font-black uppercase tracking-[0.2em] border-b border-white/5 pb-2">
+                        2. Contact & Location
+                      </h3>
+
+                      <Input
+                        label="Physical Address"
+                        value={formData.address}
+                        onChange={(v) => updateField("address", v)}
+                        placeholder="123 Main St, City, State"
+                      />
+                      <div className="grid grid-cols-2 gap-4">
+                        <Input
+                          label="Business Phone"
+                          value={formData.phone}
+                          onChange={(v) => updateField("phone", v)}
+                          placeholder="+1 (555) 000-0000"
+                        />
+                        <Input
+                          label="Support Email"
+                          value={formData.contactEmail}
+                          onChange={(v) => updateField("contactEmail", v)}
+                          placeholder="hello@restaurant.com"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <Input
+                          label="Instagram (Optional)"
+                          value={formData.instagram}
+                          onChange={(v) => updateField("instagram", v)}
+                          placeholder="@username"
+                        />
+                        <Input
+                          label="Twitter (Optional)"
+                          value={formData.twitter}
+                          onChange={(v) => updateField("twitter", v)}
+                          placeholder="@username"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Form Controls */}
+                <div className="flex gap-4 pt-6 mt-8 border-t border-white/5">
+                  {step === 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      className="px-10 py-5 rounded-full font-black uppercase tracking-widest text-[10px] border border-white/10 hover:bg-white/5 transition-all text-white cursor-pointer"
+                    >
+                      Back
+                    </button>
+                  )}
+                  {step === 1 ? (
+                    <button
+                      type="button"
+                      onClick={nextStep}
+                      className="flex-1 py-5 rounded-full font-black uppercase tracking-widest text-[10px] cursor-pointer border-none text-white transition-all active:scale-95"
+                      style={{ background: accent }}
+                    >
+                      Continue
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={loading || uploadingLogo}
+                      className="flex-1 py-5 rounded-full font-black uppercase tracking-widest text-[10px] cursor-pointer border-none text-white transition-all active:scale-95 disabled:opacity-50"
+                      style={{ background: accent }}
+                    >
+                      {loading ? "Deploying System..." : "Launch Dashboard"}
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              {step === 1 && (
+                <p className="mt-10 text-center text-white/30 text-[10px] font-black uppercase tracking-widest">
+                  Already registered?{" "}
+                  <Link
+                    to="/login"
+                    className="no-underline transition-colors hover:text-white"
+                    style={{ color: accent }}
+                  >
+                    Sign in here
+                  </Link>
+                </p>
+              )}
+            </>
+          ) : (
+            /* STEP 3: SUCCESS (Formally Step 4) */
+            <div className="text-center animate-in zoom-in-95 duration-500">
+              <div
+                className="w-24 h-24 rounded-full mx-auto mb-8 flex items-center justify-center"
+                style={{
+                  background: `${accent}15`,
+                  border: `1px solid ${accent}40`,
+                }}
+              >
+                <svg
+                  className="w-10 h-10"
+                  style={{ color: accent }}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                >
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+              </div>
+              <h2 className="font-display text-4xl font-black uppercase italic mb-4">
+                Verify Your Identity
+              </h2>
+              <p className="text-white/40 text-sm mb-10 leading-relaxed max-w-sm mx-auto">
+                We've sent a secure verification link to <br />
+                <span className="text-white font-bold">
+                  {formData.email}
+                </span>. <br />
+                Please click the link to activate your dashboard.
+              </p>
+              <Link
+                to="/login"
+                className="inline-block px-12 py-5 rounded-full bg-white text-black font-black uppercase tracking-widest text-[10px] no-underline hover:bg-white/90 transition-colors"
+              >
+                Proceed to Login
+              </Link>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
 
-// --- Reusable Input Component ---
-const Input = ({ label, type = "text", value, onChange, placeholder }) => (
-  <div className="space-y-2">
-    <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1">
+// --- HELPER COMPONENT: INPUT ---
+const Input = ({
+  label,
+  type = "text",
+  value,
+  onChange,
+  placeholder,
+  showToggle,
+  onToggle,
+  isToggled,
+}) => (
+  <div className="space-y-2 relative">
+    <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">
       {label}
     </label>
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-xs focus:outline-none focus:border-white/20 text-white placeholder:text-white/10 transition-all"
-    />
+    <div className="relative">
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl px-5 py-4 text-sm text-white focus:outline-none focus:border-white/20 transition-all placeholder-white/10"
+      />
+      {showToggle && (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-4 top-1/2 -translate-y-1/2 bg-transparent border-none text-[10px] font-black uppercase tracking-tighter text-white/20 hover:text-white cursor-pointer transition-all"
+        >
+          {isToggled ? "Hide" : "Show"}
+        </button>
+      )}
+    </div>
   </div>
 );
 
