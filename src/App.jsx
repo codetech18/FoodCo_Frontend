@@ -13,19 +13,25 @@ import ProtectedRoute from "./admin/ProtectedRoute";
 import SuperAdminRoute from "./SuperAdminRoute";
 import { RestaurantProvider, useRestaurant } from "./context/RestaurantContext";
 
+// Lazy-loaded Global Pages
+const Landing = lazy(() => import("./pages/Landing"));
+const Signup = lazy(() => import("./pages/Signup"));
+const Login = lazy(() => import("./pages/Login"));
+const Welcome = lazy(() => import("./pages/Welcome"));
+const Support = lazy(() => import("./pages/Support")); // Added Support Page
+const NotFound = lazy(() => import("./pages/NotFound"));
+const Suspended = lazy(() => import("./pages/Suspended"));
+
+// Lazy-loaded SuperAdmin Pages
+const SuperAdminDashboard = lazy(() => import("./pages/SuperAdminDashboard"));
+
+// Lazy-loaded Restaurant Specific Pages
 const Home = lazy(() => import("./pages/Home"));
 const MenuPage = lazy(() => import("./pages/MenuPage"));
 const OrderPage = lazy(() => import("./pages/OrderPage"));
 const TrackOrder = lazy(() => import("./pages/TrackOrder"));
 const AdminLogin = lazy(() => import("./admin/AdminLogin"));
 const AdminDashboard = lazy(() => import("./admin/AdminDashboard"));
-const NotFound = lazy(() => import("./pages/NotFound"));
-const Landing = lazy(() => import("./pages/Landing"));
-const Signup = lazy(() => import("./pages/Signup"));
-const Login = lazy(() => import("./pages/Login"));
-const SuperAdminDashboard = lazy(() => import("./pages/SuperAdminDashboard"));
-const Welcome = lazy(() => import("./pages/Welcome"));
-const Suspended = lazy(() => import("./pages/Suspended"));
 
 const PageLoader = () => (
   <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -46,8 +52,10 @@ const SuspendedGuard = ({ children }) => {
   return children;
 };
 
+// Routes scoped to a specific restaurant ID
 const RestaurantRoutes = () => {
   const { restaurantId } = useParams();
+
   return (
     <RestaurantProvider restaurantId={restaurantId}>
       <ListItemsAndTotalPriceProvider>
@@ -97,15 +105,21 @@ const RestaurantRoutes = () => {
   );
 };
 
+// Main App component routing
 const App = () => {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Suspense fallback={<PageLoader />}>
           <Routes>
+            {/* Global SaaS Routes */}
             <Route path="/" element={<Landing />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/welcome" element={<Welcome />} />
+            <Route path="/support" element={<Support />} />{" "}
+            {/* Rendered Support Route */}
+            {/* Super Admin Route */}
             <Route
               path="/superadmin"
               element={
@@ -114,8 +128,9 @@ const App = () => {
                 </SuperAdminRoute>
               }
             />
-            <Route path="/welcome" element={<Welcome />} />
+            {/* Dynamic Restaurant Routes (MUST go after static routes like /support) */}
             <Route path="/:restaurantId/*" element={<RestaurantRoutes />} />
+            {/* Global Fallback */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

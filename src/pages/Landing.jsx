@@ -281,12 +281,9 @@ const Landing = () => {
           <Link to="/terms" className="hover:text-white transition-colors">
             Legal
           </Link>
-          <a
-            href="mailto:hi@servrr.com"
-            className="hover:text-white transition-colors"
-          >
+          <Link to="/support" className="hover:text-white transition-colors">
             Support
-          </a>
+          </Link>
         </div>
       </footer>
     </div>
