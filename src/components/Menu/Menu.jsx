@@ -6,6 +6,7 @@ import { db } from "../../firebase/config";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useOrder } from "../../Context2";
 import { useRestaurant } from "../../context/RestaurantContext";
+import { generateToken, saveTableSession } from "../../utils/tableToken";
 
 const CATEGORIES = ["All", "Mains", "Drinks", "Breakfast"];
 
@@ -44,9 +45,21 @@ const Menu = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+
   const [searchParams] = useSearchParams();
   const tableParam = searchParams.get("table") || "";
+  const tokenParam = searchParams.get("token") || "";
 
+  // ── Validate token from QR scan and save session ──────────────────────────
+  useEffect(() => {
+    if (!tableParam || !tokenParam || !restaurantId) return;
+    const expected = generateToken(restaurantId, tableParam);
+    if (tokenParam === expected) {
+      saveTableSession(restaurantId, tableParam, tokenParam);
+    }
+  }, [tableParam, tokenParam, restaurantId]);
+
+  // ── Load menu ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!restaurantId) return;
     const q = query(
@@ -282,7 +295,7 @@ const Menu = () => {
           )}
         </div>
 
-        {/* Proceed to order CTA */}
+        {/* Proceed CTA */}
         {!loading && menuItems.length > 0 && (
           <div className="flex flex-col items-center gap-3 mt-14">
             <button
