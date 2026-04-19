@@ -1,15 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation, useParams } from "react-router-dom";
 import { useRestaurant } from "../context/RestaurantContext";
-import {
-  Search,
-  Menu as MenuIcon,
-  X,
-  Moon,
-  Sun,
-  ArrowRight,
-  ShoppingBag,
-} from "lucide-react";
+import { X, Moon, Sun, ArrowRight, Menu as MenuIcon } from "lucide-react";
 
 const NavBar = () => {
   const [scrolled, setScrolled] = useState(false);
@@ -65,12 +57,12 @@ const NavBar = () => {
             />
 
             <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-black uppercase italic tracking-tighter">
+              <h3 className="text-2xl font-black uppercase italic tracking-tighter text-white">
                 Locate Order
               </h3>
               <button
                 onClick={() => setShowTrackModal(false)}
-                className="p-2 hover:bg-white/5 rounded-full transition-colors"
+                className="p-2 hover:bg-white/5 rounded-full transition-colors border-none bg-transparent cursor-pointer"
               >
                 <X size={20} className="text-white/40" />
               </button>
@@ -100,7 +92,7 @@ const NavBar = () => {
 
               <button
                 onClick={handleTrackSubmit}
-                className="w-full py-5 rounded-xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 transition-transform active:scale-95"
+                className="w-full py-5 rounded-xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 transition-transform active:scale-95 cursor-pointer border-none text-white"
                 style={{ background: accent }}
               >
                 Track Now <ArrowRight size={18} />
@@ -122,19 +114,24 @@ const NavBar = () => {
             }
           `}
         >
-          {/* Logo */}
+          {/* LOGO & NAME SECTION */}
           <Link
             to={`/${restaurantId}`}
-            className="flex items-center gap-3 pl-4 group no-underline"
+            className="flex items-center gap-3 pl-4 group no-underline text-white"
           >
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-transform group-hover:rotate-12"
-              style={{ background: accent }}
-            >
-              <ShoppingBag size={18} className="text-black" strokeWidth={3} />
-            </div>
+            {profile?.logoUrl ? (
+              <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 border border-white/5 transition-transform group-hover:scale-110">
+                <img
+                  src={profile.logoUrl}
+                  alt={profile?.name}
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ) : null}
             <span
-              className={`font-black tracking-tighter uppercase italic text-xl ${scrolled ? "hidden sm:block" : "block"}`}
+              className={`font-black tracking-tighter uppercase italic text-xl ${
+                scrolled ? "hidden sm:block" : "block"
+              }`}
             >
               {profile?.name || "SERVRR"}
             </span>
@@ -159,7 +156,9 @@ const NavBar = () => {
             <li>
               <Link
                 to={`/${restaurantId}/menu`}
-                className={`px-4 py-2 text-[11px] font-black uppercase tracking-widest transition-colors no-underline ${isMenuPage ? "text-white" : "text-white/40"}`}
+                className={`px-4 py-2 text-[11px] font-black uppercase tracking-widest transition-colors no-underline ${
+                  isMenuPage ? "text-white" : "text-white/40"
+                }`}
                 style={{ color: isMenuPage ? accent : "" }}
               >
                 Menu
@@ -193,7 +192,7 @@ const NavBar = () => {
 
             {/* Mobile Toggle */}
             <button
-              className="md:hidden w-10 h-10 flex items-center justify-center rounded-full bg-white/5 cursor-pointer border-none"
+              className="md:hidden w-10 h-10 flex items-center justify-center rounded-full bg-white/5 cursor-pointer border-none text-white"
               onClick={() => setMenuOpen(!menuOpen)}
             >
               {menuOpen ? <X size={20} /> : <MenuIcon size={20} />}
@@ -216,7 +215,7 @@ const NavBar = () => {
               onClick={() =>
                 handleAnchor(`#${label === "Home" ? "Home" : "About"}`)
               }
-              className="text-4xl font-black uppercase italic tracking-tighter text-white/20 hover:text-white transition-colors bg-transparent border-none"
+              className="text-4xl font-black uppercase italic tracking-tighter text-white/20 hover:text-white transition-colors bg-transparent border-none cursor-pointer"
             >
               {label}
             </button>
@@ -226,14 +225,14 @@ const NavBar = () => {
               setMenuOpen(false);
               setShowTrackModal(true);
             }}
-            className="text-4xl font-black uppercase italic tracking-tighter text-white/20 hover:text-white transition-colors bg-transparent border-none"
+            className="text-4xl font-black uppercase italic tracking-tighter text-white/20 hover:text-white transition-colors bg-transparent border-none cursor-pointer"
           >
             Track
           </button>
           <Link
             to={`/${restaurantId}/menu`}
             onClick={() => setMenuOpen(false)}
-            className="mt-8 px-10 py-5 rounded-full font-black uppercase tracking-widest no-underline"
+            className="mt-8 px-10 py-5 rounded-full font-black uppercase tracking-widest no-underline text-white"
             style={{ background: accent }}
           >
             View Menu
