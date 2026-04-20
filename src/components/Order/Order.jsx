@@ -205,7 +205,15 @@ const Order = () => {
   const paymentMode = profile?.paymentMode || "at_table";
 
   const tableToken = getTableSession(restaurantId);
+  // Re-read session fresh — it may have been cleared by a new QR scan in Menu.jsx
   const tableSessionLocal = getSession(restaurantId);
+
+  // If tableToken table doesn't match the stored session table, treat as fresh start
+  const isNewTable =
+    tableToken &&
+    tableSessionLocal &&
+    tableToken.table !== tableSessionLocal.table;
+  const activeSession = isNewTable ? null : tableSessionLocal;
 
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
@@ -213,7 +221,7 @@ const Order = () => {
   const [allergies, setAllergies] = useState("");
   const [table, setTable] = useState(
     tableToken?.table ||
-      tableSessionLocal?.table ||
+      activeSession?.table ||
       searchParams.get("table") ||
       "",
   );
@@ -223,21 +231,32 @@ const Order = () => {
   const [confirmedName, setConfirmedName] = useState("");
   const [orderId, setOrderId] = useState(null);
   const [sessionId, setSessionId] = useState(
-    tableSessionLocal?.firestoreId || null,
+    activeSession?.firestoreId || null,
   );
   const [sessionTotal, setSessionTotal] = useState(
-    tableSessionLocal?.totalBill || 0,
+    activeSession?.totalBill || 0,
   );
   const [billRequested, setBillRequested] = useState(
-    tableSessionLocal?.status === "awaiting_payment",
+    activeSession?.status === "awaiting_payment",
   );
   const [sessionStatus, setSessionStatus] = useState(
     tableSessionLocal?.status || "open",
   );
 
+  // ── Reset session state when a fresh QR scan is detected ────────────────
+  useEffect(() => {
+    // Fresh start: no active session OR scanning a different table
+    if ((!tableSessionLocal && tableToken) || isNewTable) {
+      setSessionStatus("open");
+      setSessionId(null);
+      setSessionTotal(0);
+      setBillRequested(false);
+    }
+  }, []);
+
   // ── Live listener on the Firestore session so customer sees updates instantly ──
   useEffect(() => {
-    const sid = tableSessionLocal?.firestoreId || sessionId;
+    const sid = activeSession?.firestoreId || sessionId;
     if (!sid || !restaurantId) return;
     const unsub = onSnapshot(
       doc(db, "restaurants", restaurantId, "tableSessions", sid),
@@ -500,6 +519,14 @@ const Order = () => {
 
   // ── Staff marked as paid/closed ──────────────────────────────────────────
   if (sessionStatus === "paid" || sessionStatus === "closed") {
+    const handleNewOrder = () => {
+      clearSession();
+      setSessionStatus("open");
+      setSessionId(null);
+      setSessionTotal(0);
+      setBillRequested(false);
+    };
+
     return (
       <section
         id="Order"
@@ -528,7 +555,7 @@ const Order = () => {
             </div>
             <h2 className="font-display text-2xl font-black text-white mb-3">
               {sessionStatus === "paid"
-                ? "Payment Confirmed!"
+                ? "Payment Confirmed! 🎉"
                 : "Session Closed"}
             </h2>
             <p className="text-white/40 text-sm leading-relaxed mb-2">
@@ -536,9 +563,37 @@ const Order = () => {
                 ? "Your payment has been received. Thank you for dining with us!"
                 : "Your table session has been closed by staff."}
             </p>
-            <p className="text-white/20 text-sm">
+            <p className="text-white/20 text-sm mb-8">
               We hope to see you again soon. 🙏
             </p>
+
+            {/* Allow starting a fresh order — e.g. ordering dessert after paying */}
+            {tableToken && (
+              <button
+                onClick={handleNewOrder}
+                className="inline-flex items-center gap-2 text-white font-semibold px-6 py-3 rounded-full border transition-all cursor-pointer bg-transparent"
+                style={{ borderColor: `${accent}60`, color: accent }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = accent;
+                  e.currentTarget.style.color = "white";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = accent;
+                }}
+              >
+                <svg
+                  className="w-4 h-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                </svg>
+                Start a New Order
+              </button>
+            )}
           </div>
         </div>
       </section>

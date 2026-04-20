@@ -55,6 +55,13 @@ const Menu = () => {
     if (!tableParam || !tokenParam || !restaurantId) return;
     const expected = generateToken(restaurantId, tableParam);
     if (tokenParam === expected) {
+      // If scanning a different table, clear the old table session first
+      const existingSession = JSON.parse(
+        localStorage.getItem("servrr_table_session") || "null",
+      );
+      if (existingSession && existingSession.table !== tableParam) {
+        localStorage.removeItem("servrr_table_session");
+      }
       saveTableSession(restaurantId, tableParam, tokenParam);
     }
   }, [tableParam, tokenParam, restaurantId]);
