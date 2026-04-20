@@ -193,6 +193,192 @@ const Toast = ({ order, accent, onDismiss }) => {
   );
 };
 
+// ── Simple Order Card (All Orders tab) ───────────────────────────────────────
+const SimpleOrderCard = ({
+  order,
+  isNew,
+  updateStatus,
+  deleteOrder,
+  accent,
+}) => {
+  const STATUS_NEXT_LABEL = {
+    pending: {
+      label: "Pending",
+      next: "Mark In Progress",
+      nextColor: "#3b82f6",
+      dotColor: "#eab308",
+    },
+    in_progress: {
+      label: "In Progress",
+      next: "Mark Ready",
+      nextColor: accent,
+      dotColor: "#3b82f6",
+    },
+    ready: {
+      label: "Ready",
+      next: "Mark Completed",
+      nextColor: "#22c55e",
+      dotColor: accent,
+    },
+    completed: {
+      label: "Completed",
+      next: null,
+      nextColor: null,
+      dotColor: "#22c55e",
+    },
+  };
+  const cfg = STATUS_NEXT_LABEL[order.status] || STATUS_NEXT_LABEL.pending;
+  const [expanded, setExpanded] = React.useState(false);
+
+  return (
+    <div
+      className={`bg-[#111111] border transition-all duration-300 ${isNew ? "shadow-lg" : "border-white/5"}`}
+      style={
+        isNew
+          ? { borderColor: accent, boxShadow: `0 4px 24px ${accent}1a` }
+          : {}
+      }
+    >
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Status dot */}
+        <div
+          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+          style={{ background: cfg.dotColor }}
+        />
+
+        {/* Main info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            {isNew && (
+              <span
+                className="text-[10px] font-black px-2 py-0.5 border animate-pulse"
+                style={{
+                  color: accent,
+                  background: `${accent}26`,
+                  borderColor: `${accent}4d`,
+                }}
+              >
+                NEW
+              </span>
+            )}
+            <p className="text-white font-semibold text-sm">
+              {order.customerName || "Guest"}
+            </p>
+            <span className="text-white/20 text-xs">·</span>
+            <p className="text-white/40 text-xs">Table {order.table}</p>
+            <span className="text-white/20 text-xs">·</span>
+            <p className="text-white/30 text-xs">
+              {formatTime(order.createdAt)}
+            </p>
+            <span className="text-white/20 text-xs hidden sm:block">·</span>
+            <p
+              className="text-xs font-semibold"
+              style={{ color: cfg.dotColor }}
+            >
+              {cfg.label}
+            </p>
+          </div>
+          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+            <p className="text-white/30 text-xs">
+              {(order.items || []).length} item
+              {(order.items || []).length !== 1 ? "s" : ""}
+            </p>
+            <p className="font-bold text-xs" style={{ color: accent }}>
+              ₦{Number(order.total || 0).toLocaleString()}
+            </p>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Advance status button */}
+          {cfg.next && (
+            <button
+              onClick={() => updateStatus(order.id, NEXT_STATUS[order.status])}
+              className="text-white text-[10px] font-bold px-3 py-1.5 transition-all cursor-pointer border-none whitespace-nowrap"
+              style={{ background: cfg.nextColor }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+            >
+              {cfg.next}
+            </button>
+          )}
+          {order.status === "completed" && (
+            <span className="text-green-400 text-[10px] font-semibold px-3 py-1.5 bg-green-500/10 border border-green-500/20">
+              ✓ Done
+            </span>
+          )}
+          {/* Expand */}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white transition-all cursor-pointer bg-transparent border border-white/10 hover:border-white/30"
+          >
+            <svg
+              className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {/* Delete */}
+          <button
+            onClick={() => deleteOrder(order.id)}
+            className="w-7 h-7 flex items-center justify-center text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer bg-transparent border-none"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded items */}
+      {expanded && (
+        <div className="px-4 pb-3 border-t border-white/5 pt-3 space-y-1.5">
+          {(order.items || []).map((item, i) => (
+            <div key={i} className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-5 h-5 text-white text-[10px] font-black flex items-center justify-center"
+                  style={{ background: accent }}
+                >
+                  {item.qty}
+                </span>
+                <span className="text-white/60 text-xs">{item.name}</span>
+              </div>
+              <span className="text-white/30 text-xs">
+                ₦{(parseFloat(item.price) * item.qty).toLocaleString()}
+              </span>
+            </div>
+          ))}
+          {order.allergies &&
+            order.allergies !== "none" &&
+            order.allergies !== "None" && (
+              <p className="text-yellow-400/60 text-xs pt-1">
+                ⚠ {order.allergies}
+              </p>
+            )}
+          {order.email && (
+            <p className="text-white/20 text-xs">{order.email}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Order Card ────────────────────────────────────────────────────────────────
 const OrderCard = ({
   order,
@@ -726,83 +912,103 @@ const OrdersTab = () => {
         {/* ── Orders View ── */}
         {view === "orders" && (
           <div>
-            <div className="flex items-center gap-2 flex-wrap mb-6">
+            {/* Stats row */}
+            <div className="grid grid-cols-4 gap-3 mb-6">
               {[
-                { key: "pending", label: "Pending" },
-                { key: "in_progress", label: "In Progress" },
-                { key: "ready", label: "Ready" },
-                { key: "completed", label: "Completed" },
-                { key: "all", label: "All" },
-              ].map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setFilter(key)}
-                  className="px-3 py-1.5 text-xs font-semibold tracking-wide border transition-all cursor-pointer flex items-center gap-1.5"
-                  style={
-                    filter === key
-                      ? {
-                          background: accent,
-                          borderColor: accent,
-                          color: "white",
-                        }
-                      : {
-                          background: "transparent",
-                          borderColor: "rgba(255,255,255,0.1)",
-                          color: "rgba(255,255,255,0.4)",
-                        }
-                  }
-                  onMouseEnter={(e) => {
-                    if (filter !== key) {
-                      e.currentTarget.style.color = "white";
-                      e.currentTarget.style.borderColor =
-                        "rgba(255,255,255,0.3)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (filter !== key) {
-                      e.currentTarget.style.color = "rgba(255,255,255,0.4)";
-                      e.currentTarget.style.borderColor =
-                        "rgba(255,255,255,0.1)";
-                    }
-                  }}
+                { label: "Pending", count: counts.pending, color: "#eab308" },
+                {
+                  label: "In Progress",
+                  count: counts.in_progress,
+                  color: "#3b82f6",
+                },
+                { label: "Ready", count: counts.ready, color: accent },
+                {
+                  label: "Completed",
+                  count: counts.completed,
+                  color: "#22c55e",
+                },
+              ].map(({ label, count, color }) => (
+                <div
+                  key={label}
+                  className="bg-[#111111] border border-white/5 px-4 py-3 text-center"
                 >
-                  {label}
-                  <span
-                    className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
-                    style={
-                      filter === key
-                        ? {
-                            background: "rgba(255,255,255,0.2)",
-                            color: "white",
-                          }
-                        : {
-                            background: "rgba(255,255,255,0.08)",
-                            color: "rgba(255,255,255,0.4)",
-                          }
-                    }
-                  >
-                    {counts[key]}
-                  </span>
-                </button>
+                  <p className="font-black text-xl" style={{ color }}>
+                    {count}
+                  </p>
+                  <p className="text-white/30 text-[10px] mt-0.5">{label}</p>
+                </div>
               ))}
             </div>
 
-            {filtered.length === 0 ? (
+            {orders.length === 0 ? (
               <div className="text-center py-24 text-white/20 text-sm">
-                No {filter === "all" ? "" : filter.replace("_", " ")} orders yet
+                No orders yet
               </div>
             ) : (
-              <div className="space-y-4">
-                {filtered.map((order) => (
-                  <OrderCard
-                    key={order.id}
-                    order={order}
-                    isNew={newOrderIds.has(order.id)}
-                    updateStatus={updateStatus}
-                    deleteOrder={deleteOrder}
-                    accent={accent}
-                  />
-                ))}
+              <div className="space-y-8">
+                {groupByDate(orders).map(([dateKey, dayOrders]) => {
+                  const dayRevenue = dayOrders
+                    .filter((o) => o.status === "completed")
+                    .reduce((sum, o) => sum + Number(o.total || 0), 0);
+                  const dayTotal = dayOrders.reduce(
+                    (sum, o) => sum + Number(o.total || 0),
+                    0,
+                  );
+                  return (
+                    <div key={dateKey}>
+                      {/* Date header */}
+                      <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/5">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-2 h-2 rounded-full"
+                            style={{ background: accent }}
+                          />
+                          <h3 className="text-white font-bold text-sm">
+                            {formatDateKey(dateKey)}
+                          </h3>
+                          <span className="text-white/20 text-xs border border-white/10 px-2 py-0.5">
+                            {dayOrders.length} order
+                            {dayOrders.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <p className="text-white/20 text-[10px] uppercase tracking-wide">
+                              Completed
+                            </p>
+                            <p
+                              className="font-black text-sm"
+                              style={{ color: accent }}
+                            >
+                              ₦{dayRevenue.toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-right hidden sm:block">
+                            <p className="text-white/20 text-[10px] uppercase tracking-wide">
+                              All Orders
+                            </p>
+                            <p className="text-white/40 font-bold text-sm">
+                              ₦{dayTotal.toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Orders for this day */}
+                      <div className="space-y-2">
+                        {dayOrders.map((order) => (
+                          <SimpleOrderCard
+                            key={order.id}
+                            order={order}
+                            isNew={newOrderIds.has(order.id)}
+                            updateStatus={updateStatus}
+                            deleteOrder={deleteOrder}
+                            accent={accent}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

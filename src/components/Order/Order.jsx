@@ -6,12 +6,9 @@ import {
   addDoc,
   serverTimestamp,
   doc,
-  setDoc,
   updateDoc,
   getDoc,
-  query,
-  where,
-  getDocs,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "../../firebase/config";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -234,6 +231,32 @@ const Order = () => {
   const [billRequested, setBillRequested] = useState(
     tableSessionLocal?.status === "awaiting_payment",
   );
+  const [sessionStatus, setSessionStatus] = useState(
+    tableSessionLocal?.status || "open",
+  );
+
+  // ── Live listener on the Firestore session so customer sees updates instantly ──
+  useEffect(() => {
+    const sid = tableSessionLocal?.firestoreId || sessionId;
+    if (!sid || !restaurantId) return;
+    const unsub = onSnapshot(
+      doc(db, "restaurants", restaurantId, "tableSessions", sid),
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        setSessionStatus(data.status);
+        setSessionTotal(data.totalBill || 0);
+        if (data.status === "awaiting_payment") setBillRequested(true);
+        if (data.status === "paid" || data.status === "closed") {
+          // Staff closed the bill — clear local session and show completion screen
+          clearSession();
+          setBillRequested(false);
+          setSessionStatus(data.status);
+        }
+      },
+    );
+    return unsub;
+  }, [sessionId, restaurantId]);
 
   const navigate = useNavigate();
   const { listItemsAndTotalPrice } = useListItemsAndTotalPrice();
@@ -469,6 +492,53 @@ const Order = () => {
               Already scanned? Your session may have expired. Scan the QR code
               again to continue.
             </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // ── Staff marked as paid/closed ──────────────────────────────────────────
+  if (sessionStatus === "paid" || sessionStatus === "closed") {
+    return (
+      <section
+        id="Order"
+        className="bg-[#111111] py-28 relative overflow-hidden"
+      >
+        <div className="max-w-7xl mx-auto px-6 lg:px-10 flex items-center justify-center min-h-[400px]">
+          <div className="text-center max-w-sm">
+            <div
+              className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 border"
+              style={{ background: `${accent}20`, borderColor: `${accent}40` }}
+            >
+              <svg
+                className="w-10 h-10"
+                style={{ color: accent }}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  d="M20 6L9 17l-5-5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <h2 className="font-display text-2xl font-black text-white mb-3">
+              {sessionStatus === "paid"
+                ? "Payment Confirmed!"
+                : "Session Closed"}
+            </h2>
+            <p className="text-white/40 text-sm leading-relaxed mb-2">
+              {sessionStatus === "paid"
+                ? "Your payment has been received. Thank you for dining with us!"
+                : "Your table session has been closed by staff."}
+            </p>
+            <p className="text-white/20 text-sm">
+              We hope to see you again soon. 🙏
+            </p>
           </div>
         </div>
       </section>
