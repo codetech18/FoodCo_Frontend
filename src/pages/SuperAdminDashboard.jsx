@@ -10,10 +10,13 @@ import {
   query,
   orderBy,
   where,
+  onSnapshot,
+  addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db, auth } from "../firebase/config";
 import { signOut } from "firebase/auth";
-import { useAuth } from "../admin/AuthContext"; // Adjust path if needed
+import { useAuth } from "../admin/AuthContext";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -28,15 +31,14 @@ import {
   Cell,
 } from "recharts";
 
-// ── Shared UI Components ─────────────────────────────────────────────────────
-
+// ── Shared UI ─────────────────────────────────────────────────────────────────
 const StatCard = ({ label, value, sub, accent = "#ffffff" }) => (
   <div className="bg-[#0a0a0a] border border-white/5 p-6 rounded-2xl flex flex-col justify-center">
     <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-2">
       {label}
     </p>
     <p
-      className="font-display text-4xl font-black text-white italic"
+      className="font-display text-4xl font-black italic"
       style={{ color: accent }}
     >
       {value}
@@ -89,57 +91,321 @@ const ConfirmModal = ({ message, onConfirm, onCancel }) => (
   </div>
 );
 
-// ── Main Dashboard Component ─────────────────────────────────────────────────
+// ── Invite Codes Panel ────────────────────────────────────────────────────────
+const generateCode = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const seg = () =>
+    Array.from(
+      { length: 5 },
+      () => chars[Math.floor(Math.random() * chars.length)],
+    ).join("");
+  return `SRV-${seg()}-${seg()}`;
+};
 
+const InviteCodesPanel = ({ accent = "#fa5631" }) => {
+  const [codes, setCodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [note, setNote] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [copied, setCopied] = useState("");
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "inviteCodes"),
+      orderBy("createdAt", "desc"),
+    );
+    return onSnapshot(q, (snap) => {
+      setCodes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setLoading(false);
+    });
+  }, []);
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setCreating(true);
+    try {
+      await addDoc(collection(db, "inviteCodes"), {
+        code: generateCode(),
+        note: note.trim(),
+        status: "unused",
+        expiresAt: expiry ? new Date(expiry) : null,
+        createdAt: serverTimestamp(),
+        usedBy: null,
+        usedAt: null,
+      });
+      setNote("");
+      setExpiry("");
+    } catch (err) {
+      alert("Failed to create code.");
+    }
+    setCreating(false);
+  };
+
+  const handleRevoke = async (id) => {
+    if (!window.confirm("Revoke this code?")) return;
+    await updateDoc(doc(db, "inviteCodes", id), { status: "revoked" });
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete permanently?")) return;
+    await deleteDoc(doc(db, "inviteCodes", id));
+  };
+
+  const handleCopy = (code) => {
+    navigator.clipboard.writeText(code);
+    setCopied(code);
+    setTimeout(() => setCopied(""), 2000);
+  };
+
+  const formatDate = (ts) => {
+    if (!ts) return "—";
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString("en-NG", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const unused = codes.filter((c) => c.status === "unused").length;
+  const used = codes.filter((c) => c.status === "used").length;
+  const revoked = codes.filter((c) => c.status === "revoked").length;
+
+  const inputCls =
+    "w-full bg-[#111] border border-white/10 text-white placeholder-white/20 text-sm px-4 py-3 rounded-xl focus:outline-none focus:border-white/30 transition-colors";
+
+  return (
+    <div className="space-y-8">
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { label: "Unused", count: unused, color: "#4ade80" },
+          { label: "Used", count: used, color: accent },
+          { label: "Revoked", count: revoked, color: "#f87171" },
+        ].map(({ label, count, color }) => (
+          <div
+            key={label}
+            className="bg-[#0a0a0a] border border-white/5 p-5 rounded-2xl text-center"
+          >
+            <p
+              className="font-black text-3xl italic font-display"
+              style={{ color }}
+            >
+              {count}
+            </p>
+            <p className="text-white/30 text-[10px] font-black uppercase tracking-widest mt-1">
+              {label}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Generate */}
+      <div className="bg-[#0a0a0a] border border-white/5 p-6 rounded-2xl">
+        <h3 className="text-white font-bold text-sm mb-5 pb-3 border-b border-white/5">
+          Generate New Invite Code
+        </h3>
+        <form onSubmit={handleCreate} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-white/40 text-[10px] font-black uppercase tracking-widest mb-2">
+                Note (optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Club 701 - Abuja"
+                className={inputCls}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-white/40 text-[10px] font-black uppercase tracking-widest mb-2">
+                Expiry Date (optional)
+              </label>
+              <input
+                type="date"
+                className={inputCls}
+                value={expiry}
+                onChange={(e) => setExpiry(e.target.value)}
+                style={{ colorScheme: "dark" }}
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={creating}
+            className="flex items-center gap-2 text-white text-xs font-black uppercase tracking-widest px-6 py-3 rounded-xl transition-all cursor-pointer border-none disabled:opacity-50"
+            style={{ background: accent }}
+          >
+            {creating ? (
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+              </svg>
+            )}
+            Generate Code
+          </button>
+        </form>
+      </div>
+
+      {/* List */}
+      <div>
+        <h3 className="text-white font-bold text-sm mb-4">All Codes</h3>
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div
+              className="w-6 h-6 border-2 border-white/10 rounded-full animate-spin"
+              style={{ borderTopColor: accent }}
+            />
+          </div>
+        ) : codes.length === 0 ? (
+          <div className="text-center py-16 text-white/20 text-sm border border-dashed border-white/5 rounded-2xl">
+            No invite codes yet.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {codes.map((c) => {
+              const isExpired =
+                c.expiresAt &&
+                new Date() >
+                  (c.expiresAt.toDate
+                    ? c.expiresAt.toDate()
+                    : new Date(c.expiresAt));
+              const status =
+                isExpired && c.status === "unused" ? "expired" : c.status;
+              const STATUS_STYLE = {
+                unused: "bg-green-500/10 text-green-400 border-green-500/20",
+                used: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+                revoked: "bg-red-500/10 text-red-400 border-red-500/20",
+                expired: "bg-white/5 text-white/30 border-white/10",
+              };
+              return (
+                <div
+                  key={c.id}
+                  className="bg-[#0a0a0a] border border-white/5 rounded-xl px-5 py-3 flex items-center gap-4 flex-wrap"
+                >
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="font-mono text-white font-bold text-sm tracking-wider">
+                      {c.code}
+                    </span>
+                    <button
+                      onClick={() => handleCopy(c.code)}
+                      className="text-[10px] font-black px-2 py-0.5 border rounded transition-all cursor-pointer"
+                      style={
+                        copied === c.code
+                          ? {
+                              background: "rgba(74,222,128,0.15)",
+                              borderColor: "rgba(74,222,128,0.3)",
+                              color: "#4ade80",
+                            }
+                          : {
+                              background: "transparent",
+                              borderColor: "rgba(255,255,255,0.1)",
+                              color: "rgba(255,255,255,0.3)",
+                            }
+                      }
+                    >
+                      {copied === c.code ? "✓" : "Copy"}
+                    </button>
+                  </div>
+                  <span className="text-white/30 text-xs flex-1 truncate">
+                    {c.note || "—"}
+                  </span>
+                  <span
+                    className={`text-[10px] font-black px-2 py-0.5 border rounded capitalize ${STATUS_STYLE[status]}`}
+                  >
+                    {status}
+                  </span>
+                  <div className="text-white/20 text-xs flex-shrink-0">
+                    {c.status === "used" ? (
+                      <span>
+                        Used by{" "}
+                        <span className="text-white/40">{c.usedBy || "—"}</span>{" "}
+                        · {formatDate(c.usedAt)}
+                      </span>
+                    ) : c.expiresAt ? (
+                      <span>Expires {formatDate(c.expiresAt)}</span>
+                    ) : (
+                      <span>Created {formatDate(c.createdAt)}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {c.status === "unused" && !isExpired && (
+                      <button
+                        onClick={() => handleRevoke(c.id)}
+                        className="text-[10px] font-black px-2.5 py-1 border border-yellow-500/20 text-yellow-400/60 hover:text-yellow-400 rounded transition-all cursor-pointer bg-transparent"
+                      >
+                        Revoke
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDelete(c.id)}
+                      className="w-7 h-7 flex items-center justify-center text-white/20 hover:text-red-400 hover:bg-red-500/10 rounded transition-all cursor-pointer bg-transparent border-none"
+                    >
+                      <svg
+                        className="w-3.5 h-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path
+                          d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
 const SuperAdminDashboard = () => {
   const navigate = useNavigate();
   const { admin } = useAuth();
 
-  // Navigation State
   const [activeTab, setActiveTab] = useState("overview");
-
-  // Data State
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [restaurantOrders, setRestaurantOrders] = useState({});
-
-  // Action State
   const [confirm, setConfirm] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
 
-  // --- EXISTING LOGIC: Data Fetching ---
   const fetchRestaurants = async () => {
     setLoading(true);
     try {
       const usersSnap = await getDocs(collection(db, "users"));
       const list = [];
-
       for (const userDoc of usersSnap.docs) {
         const { restaurantId, email } = userDoc.data();
         if (!restaurantId) continue;
-
         const profileSnap = await getDoc(
           doc(db, "restaurants", restaurantId, "profile", "info"),
         );
-
-        // FIX: If the restaurant was deleted from the database, skip it entirely!
-        if (!profileSnap.exists()) {
-          continue;
-        }
-
+        if (!profileSnap.exists()) continue;
         const profile = profileSnap.data();
-
         const ordersSnap = await getDocs(
           collection(db, "restaurants", restaurantId, "orders"),
         );
         const orders = ordersSnap.docs.map((d) => d.data());
-        const totalOrders = orders.length;
-        const totalRevenue = orders
-          .filter((o) => o.status === "completed")
-          .reduce((sum, o) => sum + Number(o.total || 0), 0);
-
         list.push({
           restaurantId,
           name: profile.name || restaurantId,
@@ -148,17 +414,18 @@ const SuperAdminDashboard = () => {
           ownerEmail: email || profile.contactEmail || "—",
           createdAt: profile.createdAt,
           suspended: profile.suspended || false,
-          totalOrders,
-          totalRevenue,
+          totalOrders: orders.length,
+          totalRevenue: orders
+            .filter((o) => o.status === "completed")
+            .reduce((s, o) => s + Number(o.total || 0), 0),
         });
       }
-
       list.sort(
         (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0),
       );
       setRestaurants(list);
     } catch (err) {
-      console.error("Failed to load restaurants:", err);
+      console.error(err);
     }
     setLoading(false);
   };
@@ -167,7 +434,6 @@ const SuperAdminDashboard = () => {
     fetchRestaurants();
   }, []);
 
-  // --- EXISTING LOGIC: Actions ---
   const loadOrders = async (restaurantId) => {
     if (restaurantOrders[restaurantId]) return;
     const snap = await getDocs(
@@ -212,38 +478,26 @@ const SuperAdminDashboard = () => {
   const handleDelete = async (restaurantId) => {
     setActionLoading(restaurantId);
     try {
-      // 1. Delete menu
       const menuSnap = await getDocs(
-        collection(db, "restaurants", restaurantId, "menuItems"),
-      ); // Ensure this matches your actual menu collection name
+        collection(db, "restaurants", restaurantId, "menu"),
+      );
       for (const d of menuSnap.docs) await deleteDoc(d.ref);
-
-      // 2. Delete orders
       const ordersSnap = await getDocs(
         collection(db, "restaurants", restaurantId, "orders"),
       );
       for (const d of ordersSnap.docs) await deleteDoc(d.ref);
-
-      // 3. Delete profile
       await deleteDoc(doc(db, "restaurants", restaurantId, "profile", "info"));
-
-      // 4. FIX: Find and delete the owner's document from the 'users' collection
       const userQuery = query(
         collection(db, "users"),
         where("restaurantId", "==", restaurantId),
       );
       const userSnap = await getDocs(userQuery);
-      for (const userDoc of userSnap.docs) {
-        await deleteDoc(userDoc.ref);
-      }
-
-      // 5. Remove from UI
+      for (const d of userSnap.docs) await deleteDoc(d.ref);
       setRestaurants((prev) =>
         prev.filter((r) => r.restaurantId !== restaurantId),
       );
     } catch (err) {
-      console.error("Delete failed:", err);
-      alert("Failed to delete restaurant completely. Try again.");
+      alert("Failed to delete. Try again.");
     }
     setActionLoading(null);
     setConfirm(null);
@@ -254,7 +508,6 @@ const SuperAdminDashboard = () => {
     navigate("/login");
   };
 
-  // --- EXISTING LOGIC: Derived Stats ---
   const filtered = restaurants.filter(
     (r) =>
       r.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -270,31 +523,35 @@ const SuperAdminDashboard = () => {
     return Date.now() - d.getTime() < 7 * 24 * 60 * 60 * 1000;
   }).length;
 
-  // --- Analytics Data Processing ---
-  const topRevenueData = useMemo(() => {
-    return [...restaurants]
-      .sort((a, b) => b.totalRevenue - a.totalRevenue)
-      .slice(0, 5)
-      .map((r) => ({
-        name: r.name,
-        revenue: r.totalRevenue,
-        orders: r.totalOrders,
-      }));
-  }, [restaurants]);
+  const topRevenueData = useMemo(
+    () =>
+      [...restaurants]
+        .sort((a, b) => b.totalRevenue - a.totalRevenue)
+        .slice(0, 5)
+        .map((r) => ({
+          name: r.name,
+          revenue: r.totalRevenue,
+          orders: r.totalOrders,
+        })),
+    [restaurants],
+  );
 
-  const platformHealthData = useMemo(() => {
-    const active = restaurants.filter((r) => !r.suspended).length;
-    const suspended = restaurants.filter((r) => r.suspended).length;
-    return [
-      { name: "Active", value: active, color: "#4ade80" },
-      { name: "Suspended", value: suspended, color: "#f87171" },
-    ];
-  }, [restaurants]);
+  const platformHealthData = useMemo(
+    () => [
+      {
+        name: "Active",
+        value: restaurants.filter((r) => !r.suspended).length,
+        color: "#4ade80",
+      },
+      {
+        name: "Suspended",
+        value: restaurants.filter((r) => r.suspended).length,
+        color: "#f87171",
+      },
+    ],
+    [restaurants],
+  );
 
-  const avgRevenue =
-    restaurants.length > 0 ? totalRevenue / restaurants.length : 0;
-
-  // --- Render Helpers ---
   const formatTime = (ts) => {
     if (!ts) return "—";
     const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -304,17 +561,51 @@ const SuperAdminDashboard = () => {
     });
   };
 
+  const NAV_ITEMS = [
+    {
+      key: "overview",
+      label: "Restaurants",
+      icon: (
+        <>
+          <rect x="3" y="3" width="7" height="7" />
+          <rect x="14" y="3" width="7" height="7" />
+          <rect x="14" y="14" width="7" height="7" />
+          <rect x="3" y="14" width="7" height="7" />
+        </>
+      ),
+    },
+    {
+      key: "analytics",
+      label: "Analytics",
+      icon: (
+        <>
+          <line x1="18" y1="20" x2="18" y2="10" />
+          <line x1="12" y1="20" x2="12" y2="4" />
+          <line x1="6" y1="20" x2="6" y2="14" />
+        </>
+      ),
+    },
+    {
+      key: "invites",
+      label: "Invite Codes",
+      icon: (
+        <>
+          <path d="M15 5v2M15 11v2M15 17v2M5 5h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 1 0 0-4V7a2 2 0 0 1 2-2z" />
+        </>
+      ),
+    },
+  ];
+
   return (
     <div className="flex min-h-screen bg-[#050505] text-white font-sans">
-      {/* ── Confirm Modal ── */}
       {confirm && (
         <ConfirmModal
           message={
             confirm.type === "delete"
-              ? `Permanently delete "${confirm.name}"? This removes all their menu items and orders. This cannot be undone.`
+              ? `Permanently delete "${confirm.name}"? This cannot be undone.`
               : confirm.suspended
-                ? `Unsuspend "${confirm.name}"? They'll be able to access their dashboard again.`
-                : `Suspend "${confirm.name}"? Their customers will see an account restricted message.`
+                ? `Unsuspend "${confirm.name}"?`
+                : `Suspend "${confirm.name}"?`
           }
           onConfirm={() =>
             confirm.type === "delete"
@@ -325,10 +616,10 @@ const SuperAdminDashboard = () => {
         />
       )}
 
-      {/* ── Sidebar Navigation ── */}
-      <aside className="w-64 border-r border-white/5 flex flex-col sticky top-0 h-screen hidden lg:flex bg-[#0a0a0a]">
+      {/* Sidebar */}
+      <aside className="w-64 border-r border-white/5 flex-col sticky top-0 h-screen hidden lg:flex bg-[#0a0a0a]">
         <div className="p-8">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <span className="font-display text-2xl font-black text-white">
               SERVRR
             </span>
@@ -340,52 +631,29 @@ const SuperAdminDashboard = () => {
             Super Admin Console
           </p>
         </div>
-
         <nav className="flex-1 px-4 py-4 space-y-2">
-          <button
-            onClick={() => setActiveTab("overview")}
-            className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer border-none ${
-              activeTab === "overview"
-                ? "bg-[#fa5631] text-white shadow-lg shadow-[#fa5631]/20"
-                : "bg-transparent text-white/40 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          {NAV_ITEMS.map(({ key, label, icon }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer border-none ${
+                activeTab === key
+                  ? "bg-[#fa5631] text-white shadow-lg shadow-[#fa5631]/20"
+                  : "bg-transparent text-white/40 hover:text-white hover:bg-white/5"
+              }`}
             >
-              <rect x="3" y="3" width="7" height="7"></rect>
-              <rect x="14" y="3" width="7" height="7"></rect>
-              <rect x="14" y="14" width="7" height="7"></rect>
-              <rect x="3" y="14" width="7" height="7"></rect>
-            </svg>
-            Restaurants
-          </button>
-
-          <button
-            onClick={() => setActiveTab("analytics")}
-            className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer border-none ${
-              activeTab === "analytics"
-                ? "bg-[#fa5631] text-white shadow-lg shadow-[#fa5631]/20"
-                : "bg-transparent text-white/40 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <line x1="18" y1="20" x2="18" y2="10"></line>
-              <line x1="12" y1="20" x2="12" y2="4"></line>
-              <line x1="6" y1="20" x2="6" y2="14"></line>
-            </svg>
-            Analytics
-          </button>
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                {icon}
+              </svg>
+              {label}
+            </button>
+          ))}
         </nav>
-
         <div className="p-4 border-t border-white/5">
           <div className="flex items-center justify-between bg-white/5 p-4 rounded-xl">
             <div className="overflow-hidden">
@@ -399,7 +667,6 @@ const SuperAdminDashboard = () => {
             <button
               onClick={handleLogout}
               className="p-2 bg-transparent border-none text-white/40 hover:text-red-400 cursor-pointer transition-colors"
-              title="Logout"
             >
               <svg
                 className="w-4 h-4"
@@ -417,11 +684,11 @@ const SuperAdminDashboard = () => {
         </div>
       </aside>
 
-      {/* ── Main Content Area ── */}
+      {/* Main */}
       <main className="flex-1 flex flex-col h-screen overflow-y-auto">
-        {/* Mobile Header */}
+        {/* Mobile header */}
         <header className="lg:hidden flex items-center justify-between p-6 border-b border-white/5 bg-[#0a0a0a]">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <span className="font-display text-xl font-black text-white">
               SERVRR
             </span>
@@ -438,7 +705,6 @@ const SuperAdminDashboard = () => {
         </header>
 
         <div className="p-6 lg:p-12 max-w-7xl mx-auto w-full">
-          {/* Header Title */}
           <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
               <div className="inline-flex items-center gap-2 text-[#fa5631] text-[10px] font-black tracking-widest uppercase mb-2">
@@ -447,31 +713,28 @@ const SuperAdminDashboard = () => {
               <h1 className="font-display text-4xl lg:text-5xl font-black text-white uppercase italic tracking-tighter">
                 {activeTab === "overview"
                   ? "Network Overview"
-                  : "Platform Analytics"}
+                  : activeTab === "analytics"
+                    ? "Platform Analytics"
+                    : "Invite Codes"}
               </h1>
             </div>
-
-            {/* Mobile Tab Switcher */}
-            <div className="flex lg:hidden bg-white/5 p-1 rounded-xl">
-              <button
-                onClick={() => setActiveTab("overview")}
-                className={`flex-1 py-3 text-[10px] font-black uppercase rounded-lg border-none ${activeTab === "overview" ? "bg-[#fa5631] text-white" : "bg-transparent text-white/40"}`}
-              >
-                Overview
-              </button>
-              <button
-                onClick={() => setActiveTab("analytics")}
-                className={`flex-1 py-3 text-[10px] font-black uppercase rounded-lg border-none ${activeTab === "analytics" ? "bg-[#fa5631] text-white" : "bg-transparent text-white/40"}`}
-              >
-                Analytics
-              </button>
+            {/* Mobile tabs */}
+            <div className="flex lg:hidden bg-white/5 p-1 rounded-xl overflow-x-auto gap-1">
+              {NAV_ITEMS.map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className={`flex-shrink-0 px-4 py-3 text-[10px] font-black uppercase rounded-lg border-none ${activeTab === key ? "bg-[#fa5631] text-white" : "bg-transparent text-white/40"}`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* ── TAB: OVERVIEW (Restaurant Management) ── */}
+          {/* ── Overview Tab ── */}
           {activeTab === "overview" && (
-            <div className="space-y-8 animate-in fade-in duration-500">
-              {/* Stats */}
+            <div className="space-y-8">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard
                   label="Total Merchants"
@@ -495,7 +758,6 @@ const SuperAdminDashboard = () => {
                 />
               </div>
 
-              {/* Search & Actions */}
               <div className="flex flex-col md:flex-row items-center gap-4 bg-[#0a0a0a] p-2 rounded-2xl border border-white/5">
                 <div className="flex-1 flex items-center gap-3 px-4 w-full">
                   <svg
@@ -504,8 +766,8 @@ const SuperAdminDashboard = () => {
                     stroke="currentColor"
                     viewBox="0 0 24 24"
                   >
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
                   </svg>
                   <input
                     type="text"
@@ -532,7 +794,6 @@ const SuperAdminDashboard = () => {
                 </button>
               </div>
 
-              {/* Restaurant List */}
               {loading ? (
                 <div className="flex items-center justify-center py-24">
                   <div className="w-8 h-8 border-2 border-white/10 border-t-[#fa5631] rounded-full animate-spin" />
@@ -551,7 +812,6 @@ const SuperAdminDashboard = () => {
                       className={`bg-[#0a0a0a] border rounded-2xl transition-all overflow-hidden ${r.suspended ? "border-red-500/20 opacity-70" : "border-white/5 hover:border-white/10"}`}
                     >
                       <div className="flex flex-col md:flex-row md:items-center gap-6 p-6">
-                        {/* Identity */}
                         <div className="flex items-center gap-4 flex-1">
                           {r.logoUrl ? (
                             <img
@@ -594,8 +854,6 @@ const SuperAdminDashboard = () => {
                             </div>
                           </div>
                         </div>
-
-                        {/* Quick Stats */}
                         <div className="flex items-center gap-8 md:justify-center flex-1 py-4 md:py-0 border-y md:border-y-0 border-white/5">
                           <div>
                             <p className="text-white font-mono font-bold text-sm">
@@ -617,8 +875,6 @@ const SuperAdminDashboard = () => {
                             </p>
                           </div>
                         </div>
-
-                        {/* Actions */}
                         <div className="flex items-center gap-2 justify-end">
                           <button
                             onClick={() => handleExpand(r.restaurantId)}
@@ -638,7 +894,7 @@ const SuperAdminDashboard = () => {
                             href={`/${r.restaurantId}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-3 bg-white/5 hover:bg-white/10 rounded-xl text-white/50 hover:text-white transition-colors cursor-pointer border-none"
+                            className="p-3 bg-white/5 hover:bg-white/10 rounded-xl text-white/50 hover:text-white transition-colors no-underline"
                           >
                             <svg
                               className="w-4 h-4"
@@ -710,8 +966,6 @@ const SuperAdminDashboard = () => {
                           </button>
                         </div>
                       </div>
-
-                      {/* Orders Drawer */}
                       {expandedId === r.restaurantId && (
                         <div className="bg-[#111] p-6 border-t border-white/5">
                           <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-4">
@@ -735,16 +989,14 @@ const SuperAdminDashboard = () => {
                                   <div>
                                     <div className="flex items-center gap-2 mb-1">
                                       <span className="text-white/40 text-[10px] font-mono">
-                                        #
-                                        {order.orderNum || order.id.slice(0, 5)}
+                                        #{order.id.slice(0, 5)}
                                       </span>
                                       <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded bg-white/10 text-white">
                                         {order.status}
                                       </span>
                                     </div>
                                     <p className="text-white text-xs font-bold">
-                                      Table{" "}
-                                      {order.tableNumber || order.table || "?"}
+                                      Table {order.table || "?"}
                                     </p>
                                   </div>
                                   <div className="text-right">
@@ -771,11 +1023,10 @@ const SuperAdminDashboard = () => {
             </div>
           )}
 
-          {/* ── TAB: ANALYTICS ── */}
+          {/* ── Analytics Tab ── */}
           {activeTab === "analytics" && (
-            <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Revenue Chart */}
                 <div className="lg:col-span-2">
                   <ChartCard
                     title="Top Grossing Locations"
@@ -819,13 +1070,8 @@ const SuperAdminDashboard = () => {
                             border: "1px solid #ffffff10",
                             borderRadius: "12px",
                           }}
-                          itemStyle={{
-                            color: "#fa5631",
-                            fontSize: "14px",
-                            fontWeight: "bold",
-                          }}
-                          formatter={(value) => [
-                            `₦${value.toLocaleString()}`,
+                          formatter={(v) => [
+                            `₦${v.toLocaleString()}`,
                             "Revenue",
                           ]}
                         />
@@ -841,30 +1087,30 @@ const SuperAdminDashboard = () => {
                     </ResponsiveContainer>
                   </ChartCard>
                 </div>
-
-                {/* Health & Order Volume */}
                 <div className="space-y-6 flex flex-col">
-                  {/* Summary Blocks */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-[#0a0a0a] border border-white/5 p-5 rounded-2xl">
                       <p className="text-white/30 text-[9px] font-black uppercase tracking-widest mb-1">
                         Avg Merchant Rev
                       </p>
                       <p className="text-white font-mono font-bold">
-                        ₦{Math.round(avgRevenue).toLocaleString()}
+                        ₦
+                        {Math.round(
+                          restaurants.length
+                            ? totalRevenue / restaurants.length
+                            : 0,
+                        ).toLocaleString()}
                       </p>
                     </div>
                     <div className="bg-[#0a0a0a] border border-white/5 p-5 rounded-2xl">
                       <p className="text-white/30 text-[9px] font-black uppercase tracking-widest mb-1">
-                        Network Conversion
+                        Active Merchants
                       </p>
                       <p className="text-[#4ade80] font-mono font-bold">
-                        +12.4%
+                        {restaurants.filter((r) => !r.suspended).length}
                       </p>
                     </div>
                   </div>
-
-                  {/* Active vs Suspended Pie Chart */}
                   <ChartCard
                     title="Platform Status"
                     subtitle="Active vs Restricted accounts"
@@ -881,8 +1127,8 @@ const SuperAdminDashboard = () => {
                           dataKey="value"
                           stroke="none"
                         >
-                          {platformHealthData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          {platformHealthData.map((entry, i) => (
+                            <Cell key={i} fill={entry.color} />
                           ))}
                         </Pie>
                         <Tooltip
@@ -891,7 +1137,6 @@ const SuperAdminDashboard = () => {
                             border: "none",
                             borderRadius: "8px",
                           }}
-                          itemStyle={{ color: "#fff", fontSize: "12px" }}
                         />
                       </PieChart>
                     </ResponsiveContainer>
@@ -910,12 +1155,10 @@ const SuperAdminDashboard = () => {
                     </div>
                   </ChartCard>
                 </div>
-
-                {/* Order Volume Bar Chart */}
                 <div className="lg:col-span-3">
                   <ChartCard
                     title="Transaction Density"
-                    subtitle="Total orders processed per merchant (Top 5)"
+                    subtitle="Total orders per merchant (Top 5)"
                   >
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
@@ -942,7 +1185,7 @@ const SuperAdminDashboard = () => {
                             border: "1px solid #ffffff10",
                             borderRadius: "12px",
                           }}
-                          formatter={(value) => [value, "Total Orders"]}
+                          formatter={(v) => [v, "Total Orders"]}
                         />
                         <Bar
                           dataKey="orders"
@@ -957,6 +1200,9 @@ const SuperAdminDashboard = () => {
               </div>
             </div>
           )}
+
+          {/* ── Invite Codes Tab ── */}
+          {activeTab === "invites" && <InviteCodesPanel accent="#fa5631" />}
         </div>
       </main>
     </div>
