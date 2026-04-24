@@ -160,11 +160,12 @@ const Landing = () => {
               Features
             </a>
             <a
-              href="#pricing"
+              href="/pricing"
               className="text-sm font-medium text-white/60 hover:text-white transition-colors"
             >
               Pricing
             </a>
+
             <Link
               to="/support"
               className="text-sm font-medium text-white/60 hover:text-white transition-colors"
@@ -181,7 +182,7 @@ const Landing = () => {
               Login
             </Link>
             <Link
-              to="/signup"
+              to="/support#contact"
               className="text-sm font-bold bg-white text-black px-6 py-2.5 rounded-full hover:bg-[#fa5631] hover:text-white transition-all duration-300 transform hover:-translate-y-0.5"
             >
               Get Invite
@@ -216,11 +217,23 @@ const Landing = () => {
             >
               Pricing
             </a>
-            <Link to="/login" className="text-lg font-medium text-white/80">
+            <Link
+              to="/billing"
+              onClick={() => setMobileMenuOpen(false)}
+              className="text-lg font-medium text-white/80"
+            >
+              Billing Dashboard
+            </Link>
+            <Link
+              to="/login"
+              onClick={() => setMobileMenuOpen(false)}
+              className="text-lg font-medium text-white/80"
+            >
               Login
             </Link>
             <Link
               to="/signup"
+              onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-bold bg-[#fa5631] text-white text-center py-3 rounded-xl mt-2"
             >
               Get Invite
@@ -256,7 +269,7 @@ const Landing = () => {
 
             <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
               <Link
-                to="/signup"
+                to="/support#contact"
                 className="group flex items-center justify-center gap-2 bg-[#fa5631] text-white font-bold text-lg px-8 py-4 rounded-full transition-all hover:scale-105 hover:shadow-[0_0_30px_rgba(250,86,49,0.3)]"
               >
                 Request an Invite
@@ -534,18 +547,21 @@ const Landing = () => {
 
       {/* --- Pricing Teaser --- */}
       <section id="pricing" className="px-6 mb-32 max-w-5xl mx-auto">
-        <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-white/10 rounded-[2rem] p-12 text-center relative overflow-hidden">
+        <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-white/10 rounded-[2rem] p-12 text-center relative overflow-hidden flex flex-col items-center justify-center">
           <div className="absolute -top-24 -right-24 w-64 h-64 bg-[#fa5631]/20 blur-[100px] rounded-full pointer-events-none" />
           <h2 className="font-display text-4xl font-black mb-4 relative z-10">
             Zero upfront costs.
           </h2>
-          <p className="text-xl text-white/60 mb-8 relative z-10">
-            Free during our exclusive beta. Simple, transparent commission-based
-            pricing only when you scale.
+          <p className="text-xl text-white/60 mb-8 relative z-10 max-w-2xl">
+            Free during fisrt 7 days of trial. Simple, transparent
+            commission-based pricing only when you scale.
           </p>
-          <div className="inline-block bg-white/5 text-[#fa5631] font-bold px-6 py-2 rounded-full border border-[#fa5631]/30 relative z-10">
-            Beta Access is entirely free.
-          </div>
+          <Link
+            to="/billing"
+            className="inline-flex items-center gap-2 bg-white/5 text-[#fa5631] hover:bg-white/10 hover:text-[#fa5631]/90 font-bold px-8 py-3 rounded-full border border-[#fa5631]/30 relative z-10 transition-all duration-300"
+          >
+            View Pricing & Billing Dashboard <Icons.ArrowRight />
+          </Link>
         </div>
       </section>
 
@@ -566,7 +582,7 @@ const Landing = () => {
             Ready to take your restaurant digital?
           </h2>
           <Link
-            to="/signup"
+            to="/support"
             className="inline-flex items-center gap-2 bg-black text-white font-black text-xl px-12 py-5 rounded-full hover:scale-105 hover:bg-[#111] transition-all shadow-2xl"
           >
             Request Invite Now <Icons.ArrowRight />
@@ -603,7 +619,7 @@ const Landing = () => {
               Features
             </a>
             <a
-              href="#pricing"
+              href="/pricing"
               className="hover:text-[#fa5631] transition-colors"
             >
               Pricing
@@ -620,8 +636,10 @@ const Landing = () => {
           </div>
 
           <div className="text-white/30 text-sm flex gap-4">
-            {/* Fake Social Links using text */}
-            <a href="#" className="hover:text-white transition-colors">
+            <a
+              href="https://x.com/servrr_"
+              className="hover:text-white transition-colors"
+            >
               Twitter
             </a>
             <span>•</span>
@@ -635,7 +653,7 @@ const Landing = () => {
         </div>
       </footer>
 
-      {/* Tailwind specific custom animation setup (add to global css later if needed, but handled by arbitrary values here where possible) */}
+      {/* Tailwind specific custom animation setup */}
       <style
         dangerouslySetInnerHTML={{
           __html: `

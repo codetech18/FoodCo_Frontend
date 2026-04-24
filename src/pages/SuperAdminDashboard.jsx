@@ -406,6 +406,14 @@ const SuperAdminDashboard = () => {
           collection(db, "restaurants", restaurantId, "orders"),
         );
         const orders = ordersSnap.docs.map((d) => d.data());
+        const now = new Date();
+        const trialEndsAt = profile.trialEndsAt?.toDate?.() || null;
+        const paidUntil = profile.subscriptionPaidUntil?.toDate?.() || null;
+        const inTrial = trialEndsAt && now < trialEndsAt;
+        const isPaid = paidUntil && now < paidUntil;
+        const subExpired =
+          profile.paymentMode === "at_table" && !inTrial && !isPaid;
+
         list.push({
           restaurantId,
           name: profile.name || restaurantId,
@@ -414,6 +422,11 @@ const SuperAdminDashboard = () => {
           ownerEmail: email || profile.contactEmail || "—",
           createdAt: profile.createdAt,
           suspended: profile.suspended || false,
+          paymentMode: profile.paymentMode || "at_table",
+          subscriptionStatus: profile.subscriptionStatus || "trial",
+          trialEndsAt,
+          subscriptionPaidUntil: paidUntil,
+          subExpired,
           totalOrders: orders.length,
           totalRevenue: orders
             .filter((o) => o.status === "completed")
@@ -501,6 +514,43 @@ const SuperAdminDashboard = () => {
     }
     setActionLoading(null);
     setConfirm(null);
+  };
+
+  const handleMarkPaid = async (restaurantId) => {
+    const paidUntil = new Date();
+    paidUntil.setDate(paidUntil.getDate() + 30);
+    // Also reactivate if account was auto-suspended for non-payment
+    const r = restaurants.find((x) => x.restaurantId === restaurantId);
+    const updates = {
+      subscriptionStatus: "active",
+      subscriptionPaidUntil: paidUntil,
+      subExpired: false,
+    };
+    if (r?.suspendedReason === "subscription_expired") {
+      updates.suspended = false;
+      updates.suspendedReason = null;
+    }
+    await updateDoc(
+      doc(db, "restaurants", restaurantId, "profile", "info"),
+      updates,
+    );
+    setRestaurants((prev) =>
+      prev.map((x) =>
+        x.restaurantId === restaurantId
+          ? {
+              ...x,
+              subscriptionStatus: "active",
+              subscriptionPaidUntil: paidUntil,
+              subExpired: false,
+              suspended:
+                x.suspendedReason === "subscription_expired"
+                  ? false
+                  : x.suspended,
+            }
+          : x,
+      ),
+    );
+    alert(`✓ ${restaurantId} marked as paid. Active for 30 days.`);
   };
 
   const handleLogout = async () => {
@@ -831,13 +881,32 @@ const SuperAdminDashboard = () => {
                             </div>
                           )}
                           <div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 flex-wrap">
                               <h3 className="text-white font-bold text-base">
                                 {r.name}
                               </h3>
                               {r.suspended && (
                                 <span className="text-[9px] text-red-400 bg-red-500/10 px-2 py-0.5 rounded font-black uppercase tracking-widest">
                                   Suspended
+                                </span>
+                              )}
+                              {r.paymentMode === "at_table" &&
+                                (r.subExpired ? (
+                                  <span className="text-[9px] text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded font-black uppercase tracking-widest">
+                                    ⚠ Sub Expired
+                                  </span>
+                                ) : r.subscriptionStatus === "trial" ? (
+                                  <span className="text-[9px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded font-black uppercase tracking-widest">
+                                    Trial
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] text-green-400 bg-green-500/10 px-2 py-0.5 rounded font-black uppercase tracking-widest">
+                                    ✓ Paid
+                                  </span>
+                                ))}
+                              {r.paymentMode === "online" && (
+                                <span className="text-[9px] text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded font-black uppercase tracking-widest">
+                                  💳 Online
                                 </span>
                               )}
                             </div>
@@ -906,6 +975,28 @@ const SuperAdminDashboard = () => {
                               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
                             </svg>
                           </a>
+                          {r.paymentMode === "at_table" &&
+                            (r.subExpired ||
+                              r.subscriptionStatus === "trial") && (
+                              <button
+                                onClick={() => handleMarkPaid(r.restaurantId)}
+                                className="p-3 bg-green-500/10 hover:bg-green-500/20 rounded-xl text-green-400 transition-colors cursor-pointer border-none"
+                                title="Mark subscription as paid (extends 30 days)"
+                              >
+                                <svg
+                                  className="w-4 h-4"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                >
+                                  <path
+                                    d="M20 6L9 17l-5-5"
+                                    strokeLinecap="round"
+                                  />
+                                </svg>
+                              </button>
+                            )}
                           <button
                             onClick={() =>
                               setConfirm({

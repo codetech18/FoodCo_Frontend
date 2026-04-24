@@ -11,16 +11,17 @@ export const RestaurantProvider = ({ restaurantId, children }) => {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [suspended, setSuspended] = useState(false);
+  const [subscriptionExpired, setSubscriptionExpired] = useState(false);
 
   // ── Theme state — persisted in localStorage ──
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem("tableflow_theme") || "dark";
+    return localStorage.getItem("servrr_theme") || "dark";
   });
 
   const toggleTheme = () => {
     setTheme((prev) => {
       const next = prev === "dark" ? "light" : "dark";
-      localStorage.setItem("tableflow_theme", next);
+      localStorage.setItem("servrr_theme", next);
       return next;
     });
   };
@@ -56,6 +57,19 @@ export const RestaurantProvider = ({ restaurantId, children }) => {
         }
         const data = snap.data();
         setSuspended(data.suspended || false);
+
+        // Check subscription expiry for at_table restaurants
+        if (data.paymentMode === "at_table") {
+          const now = new Date();
+          const trialEndsAt = data.trialEndsAt?.toDate?.() || null;
+          const paidUntil = data.subscriptionPaidUntil?.toDate?.() || null;
+          const inTrial = trialEndsAt && now < trialEndsAt;
+          const isPaid = paidUntil && now < paidUntil;
+          setSubscriptionExpired(!inTrial && !isPaid);
+        } else {
+          setSubscriptionExpired(false); // online payment = always active
+        }
+
         setProfile({ id: restaurantId, ...data });
         setLoading(false);
       },
@@ -70,6 +84,7 @@ export const RestaurantProvider = ({ restaurantId, children }) => {
         loading,
         notFound,
         suspended,
+        subscriptionExpired,
         restaurantId,
         theme,
         toggleTheme,

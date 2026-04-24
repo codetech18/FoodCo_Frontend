@@ -5,6 +5,7 @@ import MenuTab from "./MenuTab";
 import ProfileTab from "./ProfileTab";
 import AnalyticsTab from "./AnalyticsTab";
 import QRTab from "./QRTab";
+import BillingTab from "./BillingTab";
 import { useRestaurant } from "../context/RestaurantContext";
 
 const AdminDashboard = () => {
@@ -92,6 +93,21 @@ const AdminDashboard = () => {
           <rect x="14" y="3" width="7" height="7" />
           <rect x="3" y="14" width="7" height="7" />
           <rect x="14" y="14" width="3" height="3" />
+        </svg>
+      ),
+    },
+    {
+      key: "billing",
+      label: "Billing",
+      icon: (
+        <svg
+          className="w-3.5 h-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" />
         </svg>
       ),
     },
@@ -205,6 +221,7 @@ const AdminDashboard = () => {
         {activeTab === "profile" && <ProfileTab />}
         {activeTab === "analytics" && <AnalyticsTab />}
         {activeTab === "qr" && <QRTab />}
+        {activeTab === "billing" && <BillingTab />}
       </main>
     </div>
   );

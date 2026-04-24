@@ -399,7 +399,10 @@ const Support = () => {
       </section>
 
       {/* --- Contact Section --- */}
-      <section className="relative z-10 max-w-5xl mx-auto px-6 py-24 border-t border-white/5">
+      <section
+        id="contact"
+        className=" relative z-10 max-w-5xl mx-auto px-6 py-24 border-t border-white/5"
+      >
         <div className="text-center mb-16">
           <span className="text-[#fa5631] text-[10px] font-black uppercase tracking-[0.2em] mb-3 block">
             Still stuck?
@@ -420,6 +423,15 @@ const Support = () => {
                 </h3>
                 <p className="text-white/50">
                   We've received your request and will get back to you shortly.
+                  For urgent inquiries, please reach out to us on WhatsApp
+                  <a
+                    href="https://wa.me/2349058977101"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[#fa5631] hover:underline"
+                  >
+                    click here
+                  </a>
                 </p>
                 <button
                   onClick={() => setIsSubmitted(false)}
@@ -576,12 +588,12 @@ const Support = () => {
                 For live order disruptions, ping our emergency WhatsApp line.
               </p>
               <a
-                href="https://wa.me/2348000000000"
+                href="https://wa.me/2349058977101"
                 target="_blank"
                 rel="noreferrer"
                 className="text-white font-bold hover:text-[#25D366] transition-colors inline-flex items-center gap-2"
               >
-                Chat on WhatsApp
+                Chat on WhatsApp (click here)
               </a>
             </div>
           </div>

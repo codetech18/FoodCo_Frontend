@@ -69,6 +69,7 @@ const Signup = () => {
     email: "",
     password: "",
     confirmPassword: "",
+    paymentMode: "", // "online" | "at_table"
     accentColor: "#fa5631",
     tagline: "",
     description: "",
@@ -149,6 +150,9 @@ const Signup = () => {
     if (formData.password !== formData.confirmPassword)
       return setError("Passwords do not match.");
 
+    if (!formData.paymentMode)
+      return setError("Please select a payment model for your restaurant.");
+
     setLoading(true);
     const codeError = await validateInviteCode(formData.inviteCode);
     setLoading(false);
@@ -191,6 +195,10 @@ const Signup = () => {
         createdAt: serverTimestamp(),
       });
 
+      // Set trial/subscription fields
+      const trialEndsAt = new Date();
+      trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+
       // Create restaurant workspace
       await setDoc(doc(db, "restaurants", slug, "profile", "info"), {
         restaurantId: slug,
@@ -206,6 +214,13 @@ const Signup = () => {
         contactEmail: formData.contactEmail,
         instagram: formData.instagram,
         twitter: formData.twitter,
+        paymentMode: formData.paymentMode,
+        // Subscription fields (only relevant for at_table, but stored for all)
+        subscriptionStatus:
+          formData.paymentMode === "at_table" ? "trial" : "active",
+        trialEndsAt: formData.paymentMode === "at_table" ? trialEndsAt : null,
+        subscriptionPaidUntil: null,
+        monthlyFee: formData.paymentMode === "at_table" ? 20000 : 0,
         createdAt: serverTimestamp(),
       });
 
@@ -332,6 +347,86 @@ const Signup = () => {
                       <p className="text-white/20 text-[10px] ml-1">
                         Don't have a code? Contact us at hello@servrr.com
                       </p>
+                    </div>
+
+                    <div className="h-px bg-white/5" />
+
+                    {/* Payment mode selector */}
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">
+                        Payment Model *
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          {
+                            key: "online",
+                            title: "Pay Online",
+                            desc: "Customers pay before order is confirmed. 2% commission per transaction. No monthly fee.",
+                            icon: "💳",
+                          },
+                          {
+                            key: "at_table",
+                            title: "Pay at Table",
+                            desc: "Customers pay staff directly. ₦20,000/month after 7-day free trial.",
+                            icon: "🧾",
+                          },
+                        ].map(({ key, title, desc, icon }) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => updateField("paymentMode", key)}
+                            className="text-left p-4 rounded-2xl border transition-all cursor-pointer"
+                            style={
+                              formData.paymentMode === key
+                                ? {
+                                    background: `${accent}15`,
+                                    borderColor: `${accent}60`,
+                                    boxShadow: `0 0 0 1px ${accent}40`,
+                                  }
+                                : {
+                                    background: "#1a1a1a",
+                                    borderColor: "rgba(255,255,255,0.05)",
+                                  }
+                            }
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-lg">{icon}</span>
+                              {formData.paymentMode === key && (
+                                <svg
+                                  className="w-4 h-4"
+                                  style={{ color: accent }}
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                >
+                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" />
+                                  <path
+                                    d="M10 16.5l6-4.5-6-4.5v9z"
+                                    fill="none"
+                                  />
+                                </svg>
+                              )}
+                            </div>
+                            <p className="text-white font-black text-xs uppercase tracking-wide mb-1">
+                              {title}
+                            </p>
+                            <p className="text-white/30 text-[10px] leading-relaxed">
+                              {desc}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                      {formData.paymentMode === "at_table" && (
+                        <div className="bg-yellow-500/10 border border-yellow-500/20 p-3 rounded-xl">
+                          <p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest">
+                            ⚠ Trial Notice
+                          </p>
+                          <p className="text-yellow-400/70 text-[10px] mt-1 leading-relaxed">
+                            You get 7 days free. After that, ₦20,000/month is
+                            required to keep your restaurant active. Payment
+                            details will be sent to your email.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="h-px bg-white/5" />
