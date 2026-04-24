@@ -246,7 +246,22 @@ const Order = () => {
     tableSessionLocal?.status || "open",
   );
   const [paymentError, setPaymentError] = useState(null);
+  const [monthOrderCount, setMonthOrderCount] = useState(null);
   const paymentSuccessRef = useRef(false);
+  const paymentTimeoutRef = useRef(null);
+
+  // Pre-load this month's order count for Starter plan cap check (keeps Paystack open synchronous)
+  useEffect(() => {
+    if (!restaurantId || profile?.plan !== "starter") return;
+    const now = new Date();
+    const startOfMonth = Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    getDocs(
+      query(
+        collection(db, "restaurants", restaurantId, "orders"),
+        where("createdAt", ">=", startOfMonth),
+      ),
+    ).then((snap) => setMonthOrderCount(snap.size)).catch(() => {});
+  }, [restaurantId, profile?.plan]);
 
   // ── Reset session state when a fresh QR scan is detected ────────────────
   useEffect(() => {
@@ -350,19 +365,6 @@ const Order = () => {
     return sessionRef.id;
   };
 
-  const isWithinOrderCap = async () => {
-    if (profile?.plan !== "starter") return true;
-    const now = new Date();
-    const startOfMonth = Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), 1));
-    const snap = await getDocs(
-      query(
-        collection(db, "restaurants", restaurantId, "orders"),
-        where("createdAt", ">=", startOfMonth),
-      ),
-    );
-    return snap.size < 300;
-  };
-
   const saveOrderToFirestore = async (paymentRef = null) => {
     const items = Object.entries(quantities).map(([name, { price, qty }]) => ({
       name,
@@ -426,8 +428,7 @@ const Order = () => {
 
     setPaymentError(null);
 
-    const withinCap = await isWithinOrderCap();
-    if (!withinCap) {
+    if (profile?.plan === "starter" && monthOrderCount !== null && monthOrderCount >= 300) {
       return window.alert(
         "This restaurant has reached its 300 orders/month limit on the Starter plan. Please try again next month or ask the restaurant to upgrade their plan.",
       );
@@ -444,9 +445,23 @@ const Order = () => {
           "Payment system failed to load. Please refresh the page and try again.",
         );
       }
+      if (!import.meta.env.VITE_PAYSTACK_PUBLIC_KEY) {
+        return window.alert(
+          "Payment is not configured yet. Please contact the restaurant.",
+        );
+      }
 
       setSubmitting(true);
       paymentSuccessRef.current = false;
+
+      // Safety net — if Paystack callbacks never fire (mobile bug), reset after 3 min
+      clearTimeout(paymentTimeoutRef.current);
+      paymentTimeoutRef.current = setTimeout(() => {
+        if (!paymentSuccessRef.current) {
+          setSubmitting(false);
+          setPaymentError("Payment window closed or timed out. Please try again.");
+        }
+      }, 180000);
 
       const handler = window.PaystackPop.setup({
         key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
@@ -459,12 +474,14 @@ const Order = () => {
         bearer: "subaccount",
         metadata: { restaurantId, table, customerName: name },
         onClose: () => {
+          clearTimeout(paymentTimeoutRef.current);
           if (!paymentSuccessRef.current) {
             setSubmitting(false);
             setPaymentError("Payment was cancelled. Your order was not placed.");
           }
         },
         callback: async (response) => {
+          clearTimeout(paymentTimeoutRef.current);
           paymentSuccessRef.current = true;
           try {
             const verifyRes = await fetch("https://foodco-backend.onrender.com/verify-payment", {
