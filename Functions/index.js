@@ -1,6 +1,7 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { initializeApp }  = require("firebase-admin/app");
-const { getFirestore }   = require("firebase-admin/firestore");
+const { getFirestore, Timestamp }   = require("firebase-admin/firestore");
 
 initializeApp();
 
@@ -39,8 +40,9 @@ exports.checkSubscriptions = onSchedule(
 
       const profile = profileSnap.data();
 
-      // Only manage subscriptions for pay-at-table restaurants
-      if (profile.paymentMode !== "at_table") {
+      // Legacy merchants (no subscription fields) — grandfather as active, skip
+      const isLegacy = !profile.trialEndsAt && !profile.subscriptionPaidUntil && !profile.plan;
+      if (isLegacy) {
         skipped++;
         continue;
       }
@@ -84,5 +86,55 @@ exports.checkSubscriptions = onSchedule(
     }
 
     console.log(`[checkSubscriptions] Done. Suspended: ${suspended}, Reactivated: ${reactivated}, Skipped: ${skipped}`);
+  }
+);
+
+/**
+ * Enforces the 20-item menu cap for Starter plan merchants.
+ * Runs on every new menu document — deletes it if Starter plan already has 20+ items.
+ */
+exports.enforceMenuCap = onDocumentCreated(
+  "restaurants/{restaurantId}/menu/{menuId}",
+  async (event) => {
+    const { restaurantId, menuId } = event.params;
+    const db = getFirestore();
+
+    const profileSnap = await db.doc(`restaurants/${restaurantId}/profile/info`).get();
+    if (!profileSnap.exists) return;
+    if (profileSnap.data().plan !== "starter") return;
+
+    const menuSnap = await db.collection(`restaurants/${restaurantId}/menu`).get();
+    if (menuSnap.size <= 20) return;
+
+    await db.doc(`restaurants/${restaurantId}/menu/${menuId}`).delete();
+    console.log(`[enforceMenuCap] Deleted ${menuId} for ${restaurantId} — exceeded 20-item cap (had ${menuSnap.size})`);
+  }
+);
+
+/**
+ * Enforces the 300 orders/month cap for Starter plan merchants.
+ * Runs on every new order document — deletes it if cap is exceeded.
+ */
+exports.enforceOrderCap = onDocumentCreated(
+  "restaurants/{restaurantId}/orders/{orderId}",
+  async (event) => {
+    const { restaurantId, orderId } = event.params;
+    const db = getFirestore();
+
+    const profileSnap = await db.doc(`restaurants/${restaurantId}/profile/info`).get();
+    if (!profileSnap.exists) return;
+    if (profileSnap.data().plan !== "starter") return;
+
+    const now = new Date();
+    const startOfMonth = Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    const ordersSnap = await db
+      .collection(`restaurants/${restaurantId}/orders`)
+      .where("createdAt", ">=", startOfMonth)
+      .get();
+
+    if (ordersSnap.size <= 300) return;
+
+    await db.doc(`restaurants/${restaurantId}/orders/${orderId}`).delete();
+    console.log(`[enforceOrderCap] Deleted ${orderId} for ${restaurantId} — exceeded 300/month cap (had ${ordersSnap.size})`);
   }
 );

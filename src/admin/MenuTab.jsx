@@ -50,10 +50,13 @@ const uploadToCloudinary = async (file, onProgress) => {
   });
 };
 
+const STARTER_MENU_LIMIT = 20;
+
 const MenuTab = () => {
   const { restaurantId } = useParams();
   const { profile } = useRestaurant();
   const accent = profile?.accentColor || "#fa5631";
+  const isStarter = profile?.plan === "starter";
 
   const labelCls =
     "block text-white/40 text-[10px] font-semibold tracking-widest uppercase mb-1.5";
@@ -63,6 +66,7 @@ const MenuTab = () => {
   const blurStyle = { borderColor: "rgba(255,255,255,0.1)" };
 
   const [dishes, setDishes] = useState([]);
+  const atCap = isStarter && dishes.length >= STARTER_MENU_LIMIT;
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -99,6 +103,7 @@ const MenuTab = () => {
   }, [restaurantId]);
 
   const openAdd = () => {
+    if (atCap) return alert(`Starter plan is limited to ${STARTER_MENU_LIMIT} menu items. Upgrade to Pro for unlimited items.`);
     setForm(EMPTY_FORM);
     setEditingId(null);
     setImageFile(null);
@@ -147,6 +152,7 @@ const MenuTab = () => {
   const handleSave = async (e) => {
     e.preventDefault();
     if (!form.name || !form.price) return;
+    if (!editingId && atCap) return alert(`Starter plan is limited to ${STARTER_MENU_LIMIT} menu items. Upgrade to Pro for unlimited items.`);
     setSaving(true);
     try {
       let finalImageUrl = form.imageUrl;
@@ -251,24 +257,30 @@ const MenuTab = () => {
             className="bg-[#1a1a1a] border border-white/10 text-white placeholder-white/20 text-xs px-3 py-1.5 focus:outline-none transition-colors w-40"
           />
         </div>
-        <button
-          onClick={openAdd}
-          className="flex items-center gap-2 text-white text-xs font-bold px-4 py-2.5 transition-all cursor-pointer border-none"
-          style={{ background: accent }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-        >
-          <svg
-            className="w-3.5 h-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
+        <div className="flex items-center gap-3">
+          {isStarter && (
+            <span className="text-xs font-semibold"
+              style={{ color: atCap ? "#f87171" : "rgba(255,255,255,0.3)" }}>
+              {dishes.length}/{STARTER_MENU_LIMIT} items
+            </span>
+          )}
+          <button
+            onClick={openAdd}
+            disabled={atCap}
+            className="flex items-center gap-2 text-white text-xs font-bold px-4 py-2.5 transition-all border-none"
+            style={{
+              background: atCap ? "rgba(255,255,255,0.08)" : accent,
+              cursor: atCap ? "not-allowed" : "pointer",
+              opacity: atCap ? 0.5 : 1,
+            }}
+            title={atCap ? `Upgrade to Pro for more than ${STARTER_MENU_LIMIT} items` : undefined}
           >
-            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-          </svg>
-          Add Dish
-        </button>
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+            </svg>
+            Add Dish
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

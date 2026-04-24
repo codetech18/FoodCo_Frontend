@@ -83,7 +83,14 @@ const RestaurantRoutes = () => {
                   </SuspendedGuard>
                 }
               />
-              <Route path="/track/:orderId" element={<TrackOrder />} />
+              <Route
+                path="/track/:orderId"
+                element={
+                  <SuspendedGuard>
+                    <TrackOrder />
+                  </SuspendedGuard>
+                }
+              />
               <Route path="/admin/login" element={<AdminLogin />} />
               <Route
                 path="/admin"

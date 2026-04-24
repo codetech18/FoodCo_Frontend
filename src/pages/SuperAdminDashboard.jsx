@@ -61,6 +61,100 @@ const ChartCard = ({ title, subtitle, children }) => (
   </div>
 );
 
+const PLAN_OPTIONS = [
+  { key: "starter", label: "Starter", price: 10000 },
+  { key: "pro",     label: "Pro",     price: 20000 },
+];
+
+const PaymentModal = ({ restaurant, onConfirm, onCancel, loading }) => {
+  const [selectedPlan, setSelectedPlan] = useState(restaurant.plan || "starter");
+  const price = PLAN_OPTIONS.find((p) => p.key === selectedPlan)?.price || 10000;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative z-10 bg-[#111111] border border-white/10 w-full max-w-sm p-8 rounded-3xl">
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-green-500 to-transparent rounded-t-3xl" />
+        <h3 className="text-white font-display text-xl font-black uppercase italic mb-1">
+          Mark Payment Received
+        </h3>
+        <p className="text-white/40 text-xs mb-6">
+          {restaurant.name} · {restaurant.restaurantId}
+        </p>
+
+        <div className="space-y-2 mb-6">
+          <p className="text-white/40 text-[10px] font-black uppercase tracking-widest mb-3">
+            Plan
+          </p>
+          {PLAN_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setSelectedPlan(opt.key)}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all cursor-pointer text-left"
+              style={{
+                background: selectedPlan === opt.key ? "rgba(74,222,128,0.08)" : "transparent",
+                borderColor: selectedPlan === opt.key ? "rgba(74,222,128,0.4)" : "rgba(255,255,255,0.08)",
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center"
+                  style={{ borderColor: selectedPlan === opt.key ? "#4ade80" : "rgba(255,255,255,0.2)" }}
+                >
+                  {selectedPlan === opt.key && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                  )}
+                </div>
+                <span className="text-white text-sm font-semibold">{opt.label}</span>
+              </div>
+              <span className="text-white/50 text-sm font-bold">
+                ₦{opt.price.toLocaleString()}/mo
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="bg-[#1a1a1a] border border-white/5 rounded-xl p-4 mb-6 space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-white/40 text-xs font-bold uppercase tracking-widest">Amount to record</span>
+            <span className="text-green-400 font-black text-lg">₦{price.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-white/40 text-xs font-bold uppercase tracking-widest">Active until</span>
+            <span className="text-white/70 text-xs font-semibold">
+              {new Date(Date.now() + 30 * 86400000).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}
+            </span>
+          </div>
+          {restaurant.subscriptionPaidUntil && new Date(restaurant.subscriptionPaidUntil) > new Date() && (
+            <p className="text-yellow-400/60 text-[10px]">
+              Currently active until {new Date(restaurant.subscriptionPaidUntil).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })} — confirming will reset to 30 days from today.
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 bg-transparent border border-white/10 text-white/50 hover:text-white text-[10px] font-black uppercase tracking-widest py-4 rounded-xl transition-all cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(selectedPlan)}
+            disabled={loading}
+            className="flex-1 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-black text-[10px] font-black uppercase tracking-widest py-4 rounded-xl transition-all cursor-pointer border-none flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+            ) : "Confirm Payment"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ConfirmModal = ({ message, onConfirm, onCancel }) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
     <div
@@ -388,6 +482,7 @@ const SuperAdminDashboard = () => {
   const [confirm, setConfirm] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [paymentModal, setPaymentModal] = useState(null); // { restaurantId, name, currentPlan }
 
   const fetchRestaurants = async () => {
     setLoading(true);
@@ -411,8 +506,7 @@ const SuperAdminDashboard = () => {
         const paidUntil = profile.subscriptionPaidUntil?.toDate?.() || null;
         const inTrial = trialEndsAt && now < trialEndsAt;
         const isPaid = paidUntil && now < paidUntil;
-        const subExpired =
-          profile.paymentMode === "at_table" && !inTrial && !isPaid;
+        const subExpired = !inTrial && !isPaid;
 
         list.push({
           restaurantId,
@@ -423,6 +517,7 @@ const SuperAdminDashboard = () => {
           createdAt: profile.createdAt,
           suspended: profile.suspended || false,
           paymentMode: profile.paymentMode || "at_table",
+          plan: profile.plan || "starter",
           subscriptionStatus: profile.subscriptionStatus || "trial",
           trialEndsAt,
           subscriptionPaidUntil: paidUntil,
@@ -491,6 +586,15 @@ const SuperAdminDashboard = () => {
   const handleDelete = async (restaurantId) => {
     setActionLoading(restaurantId);
     try {
+      // Get the user's Auth UID before deleting Firestore docs
+      const userQuery = query(
+        collection(db, "users"),
+        where("restaurantId", "==", restaurantId),
+      );
+      const userSnap = await getDocs(userQuery);
+      const uid = userSnap.docs[0]?.id || null;
+
+      // Delete Firestore data
       const menuSnap = await getDocs(
         collection(db, "restaurants", restaurantId, "menu"),
       );
@@ -500,12 +604,20 @@ const SuperAdminDashboard = () => {
       );
       for (const d of ordersSnap.docs) await deleteDoc(d.ref);
       await deleteDoc(doc(db, "restaurants", restaurantId, "profile", "info"));
-      const userQuery = query(
-        collection(db, "users"),
-        where("restaurantId", "==", restaurantId),
-      );
-      const userSnap = await getDocs(userQuery);
       for (const d of userSnap.docs) await deleteDoc(d.ref);
+
+      // Delete Firebase Auth account via server
+      if (uid) {
+        await fetch("https://foodco-backend.onrender.com/delete-user", {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+            "x-admin-key": import.meta.env.VITE_ADMIN_API_KEY,
+          },
+          body: JSON.stringify({ uid }),
+        });
+      }
+
       setRestaurants((prev) =>
         prev.filter((r) => r.restaurantId !== restaurantId),
       );
@@ -516,41 +628,58 @@ const SuperAdminDashboard = () => {
     setConfirm(null);
   };
 
-  const handleMarkPaid = async (restaurantId) => {
+  const PLAN_PRICES = { starter: 10000, pro: 20000 };
+
+  const handleMarkPaid = async (restaurantId, selectedPlan) => {
+    setActionLoading(restaurantId);
     const paidUntil = new Date();
     paidUntil.setDate(paidUntil.getDate() + 30);
-    // Also reactivate if account was auto-suspended for non-payment
+
     const r = restaurants.find((x) => x.restaurantId === restaurantId);
     const updates = {
       subscriptionStatus: "active",
       subscriptionPaidUntil: paidUntil,
       subExpired: false,
+      plan: selectedPlan,
     };
     if (r?.suspendedReason === "subscription_expired") {
       updates.suspended = false;
       updates.suspendedReason = null;
     }
+
     await updateDoc(
       doc(db, "restaurants", restaurantId, "profile", "info"),
       updates,
     );
+
+    // Write billing history entry so BillingTab shows it
+    await addDoc(
+      collection(db, "restaurants", restaurantId, "billing"),
+      {
+        date: serverTimestamp(),
+        plan: selectedPlan,
+        amount: PLAN_PRICES[selectedPlan] || 10000,
+        status: "paid",
+      },
+    );
+
     setRestaurants((prev) =>
       prev.map((x) =>
         x.restaurantId === restaurantId
           ? {
               ...x,
+              plan: selectedPlan,
               subscriptionStatus: "active",
               subscriptionPaidUntil: paidUntil,
               subExpired: false,
               suspended:
-                x.suspendedReason === "subscription_expired"
-                  ? false
-                  : x.suspended,
+                x.suspendedReason === "subscription_expired" ? false : x.suspended,
             }
           : x,
       ),
     );
-    alert(`✓ ${restaurantId} marked as paid. Active for 30 days.`);
+    setPaymentModal(null);
+    setActionLoading(null);
   };
 
   const handleLogout = async () => {
@@ -648,6 +777,15 @@ const SuperAdminDashboard = () => {
 
   return (
     <div className="flex min-h-screen bg-[#050505] text-white font-sans">
+      {paymentModal && (
+        <PaymentModal
+          restaurant={paymentModal}
+          loading={actionLoading === paymentModal.restaurantId}
+          onConfirm={(plan) => handleMarkPaid(paymentModal.restaurantId, plan)}
+          onCancel={() => setPaymentModal(null)}
+        />
+      )}
+
       {confirm && (
         <ConfirmModal
           message={
@@ -975,28 +1113,37 @@ const SuperAdminDashboard = () => {
                               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
                             </svg>
                           </a>
-                          {r.paymentMode === "at_table" &&
-                            (r.subExpired ||
-                              r.subscriptionStatus === "trial") && (
-                              <button
-                                onClick={() => handleMarkPaid(r.restaurantId)}
-                                className="p-3 bg-green-500/10 hover:bg-green-500/20 rounded-xl text-green-400 transition-colors cursor-pointer border-none"
-                                title="Mark subscription as paid (extends 30 days)"
-                              >
-                                <svg
-                                  className="w-4 h-4"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                >
-                                  <path
-                                    d="M20 6L9 17l-5-5"
-                                    strokeLinecap="round"
-                                  />
-                                </svg>
-                              </button>
-                            )}
+                          <button
+                            onClick={() =>
+                              setPaymentModal({
+                                restaurantId: r.restaurantId,
+                                name: r.name,
+                                plan: r.plan,
+                                subscriptionPaidUntil: r.subscriptionPaidUntil,
+                              })
+                            }
+                            className="p-3 rounded-xl transition-colors cursor-pointer border-none"
+                            style={
+                              r.subExpired || r.subscriptionStatus === "trial"
+                                ? { background: "rgba(74,222,128,0.1)", color: "#4ade80" }
+                                : { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.3)" }
+                            }
+                            title={
+                              r.subExpired || r.subscriptionStatus === "trial"
+                                ? "Mark payment received"
+                                : "Renew or change plan"
+                            }
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M20 6L9 17l-5-5" strokeLinecap="round" />
+                            </svg>
+                          </button>
                           <button
                             onClick={() =>
                               setConfirm({

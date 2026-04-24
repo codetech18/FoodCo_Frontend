@@ -12,6 +12,7 @@ export const RestaurantProvider = ({ restaurantId, children }) => {
   const [notFound, setNotFound] = useState(false);
   const [suspended, setSuspended] = useState(false);
   const [subscriptionExpired, setSubscriptionExpired] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState("trial");
 
   // ── Theme state — persisted in localStorage ──
   const [theme, setTheme] = useState(() => {
@@ -58,16 +59,20 @@ export const RestaurantProvider = ({ restaurantId, children }) => {
         const data = snap.data();
         setSuspended(data.suspended || false);
 
-        // Check subscription expiry for at_table restaurants
-        if (data.paymentMode === "at_table") {
+        // Legacy merchants (created before subscription system) have none of these
+        // fields — grandfather them in as active so they aren't instantly blocked.
+        const isLegacy = !data.trialEndsAt && !data.subscriptionPaidUntil && !data.plan;
+        if (isLegacy) {
+          setSubscriptionExpired(false);
+          setSubscriptionStatus("active");
+        } else {
           const now = new Date();
           const trialEndsAt = data.trialEndsAt?.toDate?.() || null;
           const paidUntil = data.subscriptionPaidUntil?.toDate?.() || null;
           const inTrial = trialEndsAt && now < trialEndsAt;
           const isPaid = paidUntil && now < paidUntil;
           setSubscriptionExpired(!inTrial && !isPaid);
-        } else {
-          setSubscriptionExpired(false); // online payment = always active
+          setSubscriptionStatus(inTrial ? "trial" : isPaid ? "active" : "expired");
         }
 
         setProfile({ id: restaurantId, ...data });
@@ -85,6 +90,7 @@ export const RestaurantProvider = ({ restaurantId, children }) => {
         notFound,
         suspended,
         subscriptionExpired,
+        subscriptionStatus,
         restaurantId,
         theme,
         toggleTheme,

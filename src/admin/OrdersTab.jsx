@@ -286,6 +286,11 @@ const SimpleOrderCard = ({
             <p className="font-bold text-xs" style={{ color: accent }}>
               ₦{Number(order.total || 0).toLocaleString()}
             </p>
+            {order.paymentStatus === "paid" && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 border bg-green-500/10 text-green-400 border-green-500/30">
+                Paid Online
+              </span>
+            )}
           </div>
         </div>
 
@@ -427,6 +432,11 @@ const OrderCard = ({
           >
             {cfg.label}
           </span>
+          {order.paymentStatus === "paid" && (
+            <span className="text-xs font-semibold px-2 py-0.5 border bg-green-500/10 text-green-400 border-green-500/30">
+              Paid Online
+            </span>
+          )}
           <button
             onClick={() => deleteOrder(order.id)}
             className="w-6 h-6 flex items-center justify-center text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer bg-transparent border-none"
@@ -600,6 +610,11 @@ const SessionCard = ({ session, orders, accent, onClose, onMarkPaid }) => {
                           .label
                       }
                     </span>
+                    {order.paymentStatus === "paid" && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 border bg-green-500/10 text-green-400 border-green-500/30">
+                        Paid
+                      </span>
+                    )}
                     <span className="text-white/40 text-xs">
                       {formatTime(order.createdAt)}
                     </span>
@@ -757,23 +772,44 @@ const OrdersTab = () => {
     if (window.confirm("Delete this order permanently?"))
       await deleteDoc(doc(db, "restaurants", restaurantId, "orders", id));
   };
-  const closeSession = async (sessionId) => {
-    await updateDoc(
-      doc(db, "restaurants", restaurantId, "tableSessions", sessionId),
-      {
-        status: "closed",
-        closedAt: new Date(),
-      },
-    );
+  const sendReceipt = (session, sessionOrders) => {
+    const emails = [...new Set(sessionOrders.map((o) => o.email).filter(Boolean))];
+    if (!emails.length) return;
+    fetch("https://foodco-backend.onrender.com/send-receipt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        emails,
+        restaurantName: profile?.name || "The Restaurant",
+        table: session.table,
+        orders: sessionOrders.map((o) => ({
+          customerName: o.customerName || "Guest",
+          items: o.items || [],
+          total: o.total || 0,
+        })),
+        totalBill: session.totalBill || 0,
+      }),
+    }).catch(console.error);
   };
-  const markSessionPaid = async (sessionId) => {
+
+  const closeSession = async (sessionId) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    const sessionOrders = orders.filter((o) => session?.orderIds?.includes(o.id));
     await updateDoc(
       doc(db, "restaurants", restaurantId, "tableSessions", sessionId),
-      {
-        status: "paid",
-        paidAt: new Date(),
-      },
+      { status: "closed", closedAt: new Date() },
     );
+    if (session) sendReceipt(session, sessionOrders);
+  };
+
+  const markSessionPaid = async (sessionId) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    const sessionOrders = orders.filter((o) => session?.orderIds?.includes(o.id));
+    await updateDoc(
+      doc(db, "restaurants", restaurantId, "tableSessions", sessionId),
+      { status: "paid", paidAt: new Date() },
+    );
+    if (session) sendReceipt(session, sessionOrders);
   };
 
   const activeSessions = sessions.filter(

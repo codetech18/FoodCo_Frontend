@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import orderImg from "../../assets/image/pg.png";
-import axios from "axios";
 import {
   collection,
   addDoc,
@@ -9,6 +8,10 @@ import {
   updateDoc,
   getDoc,
   onSnapshot,
+  query,
+  where,
+  getDocs,
+  Timestamp,
 } from "firebase/firestore";
 import { db } from "../../firebase/config";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -242,6 +245,8 @@ const Order = () => {
   const [sessionStatus, setSessionStatus] = useState(
     tableSessionLocal?.status || "open",
   );
+  const [paymentError, setPaymentError] = useState(null);
+  const paymentSuccessRef = useRef(false);
 
   // ── Reset session state when a fresh QR scan is detected ────────────────
   useEffect(() => {
@@ -288,19 +293,6 @@ const Order = () => {
     });
     return total;
   };
-  const formatOrderItems = () => {
-    const grouped = {};
-    orderItem.forEach((item) => {
-      grouped[item.name] = (grouped[item.name] || 0) + 1;
-    });
-    return Object.entries(grouped)
-      .map(
-        ([n, qty]) =>
-          `${qty}x ${n}: ₦${parseFloat(quantities[n]?.price || 0) * qty}`,
-      )
-      .join("\n");
-  };
-
   const totalValue = calculateTotal();
   const totalPrice = totalValue.toLocaleString("en-NG", {
     minimumFractionDigits: 2,
@@ -358,6 +350,70 @@ const Order = () => {
     return sessionRef.id;
   };
 
+  const isWithinOrderCap = async () => {
+    if (profile?.plan !== "starter") return true;
+    const now = new Date();
+    const startOfMonth = Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    const snap = await getDocs(
+      query(
+        collection(db, "restaurants", restaurantId, "orders"),
+        where("createdAt", ">=", startOfMonth),
+      ),
+    );
+    return snap.size < 300;
+  };
+
+  const saveOrderToFirestore = async (paymentRef = null) => {
+    const items = Object.entries(quantities).map(([name, { price, qty }]) => ({
+      name,
+      price: parseFloat(price),
+      qty,
+    }));
+
+    const sid = await getOrCreateSession(totalValue);
+
+    const orderData = {
+      customerName: name,
+      email,
+      table,
+      allergies,
+      items,
+      total: totalValue,
+      status: "pending",
+      createdAt: serverTimestamp(),
+      sessionId: sid,
+    };
+    if (paymentRef) {
+      orderData.paymentStatus = "paid";
+      orderData.paymentRef = paymentRef;
+    }
+
+    const docRef = await addDoc(
+      collection(db, "restaurants", restaurantId, "orders"),
+      orderData,
+    );
+
+    const sessionDoc = await getDoc(
+      doc(db, "restaurants", restaurantId, "tableSessions", sid),
+    );
+    const existingIds = sessionDoc.exists()
+      ? sessionDoc.data().orderIds || []
+      : [];
+    await updateDoc(
+      doc(db, "restaurants", restaurantId, "tableSessions", sid),
+      { orderIds: [...existingIds, docRef.id] },
+    );
+
+    saveOrderId(docRef.id);
+    setOrderId(docRef.id);
+    setConfirmedName(name);
+    setName("");
+    setEmail("");
+    setAllergies("");
+    clearOrder();
+    setShowModal(true);
+  };
+
   const handleSubmit = async () => {
     if (submitting) return;
     if (!name) return window.alert("Please enter your name.");
@@ -368,71 +424,76 @@ const Order = () => {
     if (orderItem.length === 0)
       return window.alert("Please add items to your order first.");
 
+    setPaymentError(null);
+
+    const withinCap = await isWithinOrderCap();
+    if (!withinCap) {
+      return window.alert(
+        "This restaurant has reached its 300 orders/month limit on the Starter plan. Please try again next month or ask the restaurant to upgrade their plan.",
+      );
+    }
+
+    if (paymentMode === "pay_online") {
+      if (!profile?.paystackSubaccountCode) {
+        return window.alert(
+          "Online payment is not configured for this restaurant yet.",
+        );
+      }
+      if (!window.PaystackPop) {
+        return window.alert(
+          "Payment system failed to load. Please refresh the page and try again.",
+        );
+      }
+
+      setSubmitting(true);
+      paymentSuccessRef.current = false;
+
+      const handler = window.PaystackPop.setup({
+        key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+        email,
+        amount: Math.round(totalValue * 100),
+        currency: "NGN",
+        ref: `SERVRR-${restaurantId}-${Date.now()}`,
+        subaccount: profile.paystackSubaccountCode,
+        transaction_charge: 0,
+        bearer: "subaccount",
+        metadata: { restaurantId, table, customerName: name },
+        onClose: () => {
+          if (!paymentSuccessRef.current) {
+            setSubmitting(false);
+            setPaymentError("Payment was cancelled. Your order was not placed.");
+          }
+        },
+        callback: async (response) => {
+          paymentSuccessRef.current = true;
+          try {
+            const verifyRes = await fetch("https://foodco-backend.onrender.com/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reference: response.reference }),
+            });
+            const verifyData = await verifyRes.json();
+            if (!verifyData.success) {
+              window.alert("Payment verification failed. Please show this reference to staff: " + response.reference);
+              setSubmitting(false);
+              return;
+            }
+            await saveOrderToFirestore(response.reference);
+          } catch (err) {
+            console.error("Order save error:", err);
+            window.alert("Payment received but order failed to save. Please show your payment reference to staff: " + response.reference);
+          } finally {
+            setSubmitting(false);
+          }
+        },
+      });
+      handler.openIframe();
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const items = Object.entries(quantities).map(
-        ([name, { price, qty }]) => ({
-          name,
-          price: parseFloat(price),
-          qty,
-        }),
-      );
-
-      // Get or create a table session
-      const sid = await getOrCreateSession(totalValue);
-
-      // Save order linked to session
-      const docRef = await addDoc(
-        collection(db, "restaurants", restaurantId, "orders"),
-        {
-          customerName: name,
-          email,
-          table,
-          allergies,
-          items,
-          total: totalValue,
-          status: "pending",
-          createdAt: serverTimestamp(),
-          sessionId: sid,
-        },
-      );
-
-      // Add this order ID to the session's orderIds array
-      const sessionDoc = await getDoc(
-        doc(db, "restaurants", restaurantId, "tableSessions", sid),
-      );
-      const existingIds = sessionDoc.exists()
-        ? sessionDoc.data().orderIds || []
-        : [];
-      await updateDoc(
-        doc(db, "restaurants", restaurantId, "tableSessions", sid),
-        {
-          orderIds: [...existingIds, docRef.id],
-        },
-      );
-
-      // Send email
-      const formattedItems = formatOrderItems();
-      axios
-        .get("https://foodco-backend.onrender.com", {
-          params: {
-            email,
-            subject: name,
-            message: `\n${formattedItems}\n\nTotal: ₦${totalPrice}`,
-            order1: allergies,
-            table,
-          },
-        })
-        .catch(console.error);
-
-      saveOrderId(docRef.id);
-      setOrderId(docRef.id);
-      setConfirmedName(name);
-      setName("");
-      setEmail("");
-      setAllergies("");
-      clearOrder();
-      setShowModal(true);
+      await saveOrderToFirestore();
     } catch (err) {
       console.error("Order save error:", err);
       window.alert("Something went wrong. Please try again.");
@@ -856,6 +917,29 @@ const Order = () => {
                   </div>
                 )}
 
+                {paymentError && (
+                  <div className="p-3 border border-red-500/30 bg-red-500/10 text-red-400 text-sm">
+                    {paymentError}
+                  </div>
+                )}
+
+                {paymentMode === "pay_online" && totalCount > 0 && (
+                  <div
+                    className="p-3 border text-xs flex items-center gap-2"
+                    style={{
+                      borderColor: `${accent}33`,
+                      background: `${accent}0d`,
+                      color: accent,
+                    }}
+                  >
+                    <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+                      <line x1="1" y1="10" x2="23" y2="10" />
+                    </svg>
+                    You will be redirected to Paystack to complete payment before your order is confirmed.
+                  </div>
+                )}
+
                 <button
                   type="button"
                   onClick={handleSubmit}
@@ -874,7 +958,11 @@ const Order = () => {
                     </>
                   ) : (
                     <>
-                      {sessionTotal > 0 ? "Add to Bill" : "Confirm Order"}
+                      {paymentMode === "pay_online"
+                        ? `Pay ₦${totalPrice}`
+                        : sessionTotal > 0
+                        ? "Add to Bill"
+                        : "Confirm Order"}
                       {totalCount > 0 && (
                         <span className="bg-white/20 text-xs font-black px-2 py-0.5 rounded-full">
                           {totalCount} item{totalCount !== 1 ? "s" : ""}

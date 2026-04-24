@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { Link } from "react-router-dom";
 
 const Icons = {
@@ -34,51 +34,46 @@ const Icons = {
 
 const plans = [
   {
-    name: "Starter",
-    price: "₦10,000",
-    period: "/month",
-    description: "Perfect for cafes and small bars looking to go digital.",
+    name: "Free Trial",
+    price: "₦0",
+    period: " for 7 days",
+    description: "Try everything free. No card required. Automatic on signup.",
     features: [
-      "Up to 10 Tables",
-      "Digital QR Menu",
-      "Basic Analytics",
-      "Email Support",
-      "Standard Theme",
+      "7 days full access",
+      "Menu management & QR codes",
+      "Order tracking",
+      "No credit card needed",
     ],
     cta: "Start Free Trial",
     featured: false,
   },
   {
-    name: "Professional",
-    price: "₦25,000",
+    name: "Starter",
+    price: "₦10,000",
     period: "/month",
-    description: "Built for busy restaurants needing full control.",
+    description: "Perfect for cafes and small restaurants going digital.",
     features: [
-      "Unlimited Tables",
-      "Custom Brand Colors",
-      "Real-time Dashboard",
-      "Priority WhatsApp Support",
-      "Advanced Analytics",
-      "Kitchen Display Sync",
+      "Up to 300 orders/month",
+      "Menu management",
+      "QR code generation",
+      "7-day & 30-day analytics",
     ],
-    cta: "Go Professional",
-    featured: true, // This will be highlighted
+    cta: "Get Started",
+    featured: false,
   },
   {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "For restaurant chains and multi-location groups.",
+    name: "Pro",
+    price: "₦20,000",
+    period: "/month",
+    description: "Built for busy restaurants that need full control.",
     features: [
-      "Multi-location Mgmt",
-      "Custom API Access",
-      "Dedicated Account Manager",
-      "White-label Domain",
-      "Staff Performance Tracking",
-      "24/7 Phone Support",
+      "Unlimited orders",
+      "Full analytics + all-time view",
+      "Table sessions & running bill",
+      "Priority support",
     ],
-    cta: "Coming soon",
-    featured: false,
+    cta: "Go Pro",
+    featured: true,
   },
 ];
 

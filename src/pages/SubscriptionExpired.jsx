@@ -2,10 +2,16 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { useRestaurant } from "../context/RestaurantContext";
 
+const PLAN_PRICES = { starter: 10000, pro: 20000 };
+const PLAN_LABELS = { starter: "Starter", pro: "Pro" };
+
 const SubscriptionExpired = () => {
   const { profile } = useRestaurant();
-  const accent = profile?.accentColor || "#fa5631";
-  const name   = profile?.name        || "Your restaurant";
+  const accent     = profile?.accentColor || "#fa5631";
+  const name       = profile?.name        || "Your restaurant";
+  const plan       = profile?.plan        || "starter";
+  const monthlyFee = PLAN_PRICES[plan]    || 10000;
+  const planLabel  = PLAN_LABELS[plan]    || "Starter";
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6">
@@ -19,19 +25,20 @@ const SubscriptionExpired = () => {
           Subscription Expired
         </h1>
         <p className="text-white/40 text-sm leading-relaxed mb-2">
-          <span className="text-white font-semibold">{name}</span>'s 7-day free trial has ended.
+          <span className="text-white font-semibold">{name}</span>'s free trial has ended.
         </p>
         <p className="text-white/30 text-sm leading-relaxed mb-8">
-          To continue taking orders, the monthly subscription fee of{" "}
-          <span className="text-white font-bold">₦20,000</span> needs to be paid.
-          Please contact SERVRR support to renew your subscription.
+          To continue taking orders, renew your{" "}
+          <span className="text-white font-bold">{planLabel} plan</span> for{" "}
+          <span className="text-white font-bold">₦{monthlyFee.toLocaleString()}/month</span>.
+          Contact SERVRR support to complete your payment.
         </p>
 
         <div className="bg-[#111111] border border-white/5 p-5 mb-6 text-left space-y-3">
           <p className="text-white/30 text-[10px] font-semibold tracking-widest uppercase">How to renew</p>
           {[
             "Contact us at support@servrr.ng",
-            "Pay ₦20,000 via bank transfer or Paystack",
+            `Pay ₦${monthlyFee.toLocaleString()} via bank transfer`,
             "Your account will be reactivated within 1 hour",
           ].map((step, i) => (
             <div key={i} className="flex items-start gap-3">

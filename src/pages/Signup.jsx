@@ -69,7 +69,7 @@ const Signup = () => {
     email: "",
     password: "",
     confirmPassword: "",
-    paymentMode: "", // "online" | "at_table"
+    paymentMode: "", // "pay_online" | "at_table"
     accentColor: "#fa5631",
     tagline: "",
     description: "",
@@ -215,12 +215,9 @@ const Signup = () => {
         instagram: formData.instagram,
         twitter: formData.twitter,
         paymentMode: formData.paymentMode,
-        // Subscription fields (only relevant for at_table, but stored for all)
-        subscriptionStatus:
-          formData.paymentMode === "at_table" ? "trial" : "active",
-        trialEndsAt: formData.paymentMode === "at_table" ? trialEndsAt : null,
+        subscriptionStatus: "trial",
+        trialEndsAt,
         subscriptionPaidUntil: null,
-        monthlyFee: formData.paymentMode === "at_table" ? 20000 : 0,
         createdAt: serverTimestamp(),
       });
 
@@ -359,15 +356,15 @@ const Signup = () => {
                       <div className="grid grid-cols-2 gap-3">
                         {[
                           {
-                            key: "online",
+                            key: "pay_online",
                             title: "Pay Online",
-                            desc: "Customers pay before order is confirmed. 2% commission per transaction. No monthly fee.",
+                            desc: "Customers pay via Paystack before their order is confirmed.",
                             icon: "💳",
                           },
                           {
                             key: "at_table",
                             title: "Pay at Table",
-                            desc: "Customers pay staff directly. ₦20,000/month after 7-day free trial.",
+                            desc: "Customers order first and pay staff directly at the table.",
                             icon: "🧾",
                           },
                         ].map(({ key, title, desc, icon }) => (
@@ -392,18 +389,9 @@ const Signup = () => {
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-lg">{icon}</span>
                               {formData.paymentMode === key && (
-                                <svg
-                                  className="w-4 h-4"
-                                  style={{ color: accent }}
-                                  viewBox="0 0 24 24"
-                                  fill="currentColor"
-                                >
-                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" />
-                                  <path
-                                    d="M10 16.5l6-4.5-6-4.5v9z"
-                                    fill="none"
-                                  />
-                                </svg>
+                                <div className="w-4 h-4 rounded-full flex items-center justify-center" style={{ background: accent }}>
+                                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                                </div>
                               )}
                             </div>
                             <p className="text-white font-black text-xs uppercase tracking-wide mb-1">
@@ -415,18 +403,20 @@ const Signup = () => {
                           </button>
                         ))}
                       </div>
-                      {formData.paymentMode === "at_table" && (
-                        <div className="bg-yellow-500/10 border border-yellow-500/20 p-3 rounded-xl">
-                          <p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest">
-                            ⚠ Trial Notice
-                          </p>
-                          <p className="text-yellow-400/70 text-[10px] mt-1 leading-relaxed">
-                            You get 7 days free. After that, ₦20,000/month is
-                            required to keep your restaurant active. Payment
-                            details will be sent to your email.
-                          </p>
-                        </div>
-                      )}
+                    </div>
+
+                    <div className="bg-white/[0.03] border border-white/8 p-4 rounded-2xl flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: `${accent}20` }}>
+                        <svg className="w-4 h-4" style={{ color: accent }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-white font-black text-xs uppercase tracking-widest mb-1">7-Day Free Trial</p>
+                        <p className="text-white/40 text-[10px] leading-relaxed">
+                          Your account starts on a free trial with full access. Choose your plan and make payment before the trial ends to keep your dashboard active.
+                        </p>
+                      </div>
                     </div>
 
                     <div className="h-px bg-white/5" />

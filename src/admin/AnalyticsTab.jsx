@@ -68,6 +68,15 @@ const AnalyticsTab = () => {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod]   = useState("30d");
 
+  // Treat as Starter (most restrictive) while profile is still loading —
+  // prevents the All Time button flashing as unlocked before plan is known.
+  const isStarter = !profile || profile.plan === "starter";
+
+  // Reset to 30d if plan loads and turns out to be Starter with All Time selected.
+  useEffect(() => {
+    if (isStarter && period === "all") setPeriod("30d");
+  }, [isStarter]);
+
   useEffect(() => {
     if (!restaurantId) return;
     const q = query(
@@ -179,9 +188,9 @@ const AnalyticsTab = () => {
   }, [filtered, accent]);
 
   const PERIOD_OPTS = [
-    { key: "7d",  label: "Last 7 Days" },
-    { key: "30d", label: "Last 30 Days" },
-    { key: "all", label: "All Time" },
+    { key: "7d",  label: "Last 7 Days",  starterAllowed: true },
+    { key: "30d", label: "Last 30 Days", starterAllowed: true },
+    { key: "all", label: "All Time",     starterAllowed: false },
   ];
 
   if (loading) return (
@@ -198,16 +207,32 @@ const AnalyticsTab = () => {
     <div className="space-y-8">
 
       {/* Period selector */}
-      <div className="flex items-center gap-2">
-        {PERIOD_OPTS.map(({ key, label }) => (
-          <button key={key} onClick={() => setPeriod(key)}
-            className="px-4 py-2 text-xs font-semibold border transition-all cursor-pointer"
-            style={period === key
-              ? { background: accent, borderColor: accent, color: "white" }
-              : { background: "transparent", borderColor: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.4)" }}>
-            {label}
-          </button>
-        ))}
+      <div className="flex items-center gap-2 flex-wrap">
+        {PERIOD_OPTS.map(({ key, label, starterAllowed }) => {
+          const locked = isStarter && !starterAllowed;
+          return (
+            <button
+              key={key}
+              onClick={() => !locked && setPeriod(key)}
+              title={locked ? "Upgrade to Pro to unlock All Time analytics" : undefined}
+              className="relative px-4 py-2 text-xs font-semibold border transition-all"
+              style={
+                locked
+                  ? { background: "transparent", borderColor: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.2)", cursor: "not-allowed" }
+                  : period === key
+                  ? { background: accent, borderColor: accent, color: "white", cursor: "pointer" }
+                  : { background: "transparent", borderColor: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.4)", cursor: "pointer" }
+              }
+            >
+              {label}
+              {locked && (
+                <span className="ml-1.5 text-[9px] font-black uppercase tracking-wider opacity-50">
+                  Pro
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* KPI Stats */}
