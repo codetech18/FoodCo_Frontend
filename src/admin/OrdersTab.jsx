@@ -11,6 +11,7 @@ import {
 import { useParams } from "react-router-dom";
 import { db } from "../firebase/config";
 import { useRestaurant } from "../context/RestaurantContext";
+import ReauthModal, { isReauthValid } from "../components/ReauthModal";
 
 const STATUS_CONFIG = {
   pending: {
@@ -695,8 +696,19 @@ const OrdersTab = () => {
   const [filter, setFilter] = useState("pending");
   const [newOrderIds, setNewOrderIds] = useState(new Set());
   const [toasts, setToasts] = useState([]);
+  const [showReauth, setShowReauth] = useState(false);
   const prevOrderIds = useRef(new Set());
   const isFirstLoad = useRef(true);
+  const pendingAction = useRef(null);
+
+  const withReauth = (action) => {
+    if (isReauthValid()) {
+      action();
+    } else {
+      pendingAction.current = action;
+      setShowReauth(true);
+    }
+  };
 
   const playSound = () => {
     try {
@@ -768,9 +780,10 @@ const OrdersTab = () => {
       status: nextStatus,
     });
   };
-  const deleteOrder = async (id) => {
-    if (window.confirm("Delete this order permanently?"))
+  const deleteOrder = (id) => {
+    withReauth(async () => {
       await deleteDoc(doc(db, "restaurants", restaurantId, "orders", id));
+    });
   };
   const sendReceipt = (session, sessionOrders) => {
     const emails = [...new Set(sessionOrders.map((o) => o.email).filter(Boolean))];
@@ -837,6 +850,13 @@ const OrdersTab = () => {
 
   return (
     <>
+      {showReauth && (
+        <ReauthModal
+          accent={accent}
+          onCancel={() => { setShowReauth(false); pendingAction.current = null; }}
+          onSuccess={() => { setShowReauth(false); pendingAction.current?.(); pendingAction.current = null; }}
+        />
+      )}
       {/* Toast stack */}
       <div
         className="fixed bottom-6 right-6 z-[100] flex flex-col-reverse gap-3 pointer-events-none"

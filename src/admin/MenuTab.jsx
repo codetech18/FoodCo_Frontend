@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useRestaurant } from "../context/RestaurantContext";
+import ReauthModal, { isReauthValid } from "../components/ReauthModal";
 
 const CATEGORIES = ["Mains", "Drinks", "Breakfast"];
 const EMPTY_FORM = {
@@ -75,6 +76,17 @@ const MenuTab = () => {
   const [filterCat, setFilterCat] = useState("All");
   const [search, setSearch] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [showReauth, setShowReauth] = useState(false);
+  const pendingAction = useRef(null);
+
+  const withReauth = (action) => {
+    if (isReauthValid()) {
+      action();
+    } else {
+      pendingAction.current = action;
+      setShowReauth(true);
+    }
+  };
   const [imageMode, setImageMode] = useState("upload");
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
@@ -196,9 +208,11 @@ const MenuTab = () => {
     });
   };
 
-  const handleDelete = async (id) => {
-    await deleteDoc(doc(db, "restaurants", restaurantId, "menu", id));
-    setDeleteConfirm(null);
+  const handleDelete = (id) => {
+    withReauth(async () => {
+      await deleteDoc(doc(db, "restaurants", restaurantId, "menu", id));
+      setDeleteConfirm(null);
+    });
   };
 
   const filtered = dishes
@@ -216,6 +230,14 @@ const MenuTab = () => {
     );
 
   return (
+    <>
+    {showReauth && (
+      <ReauthModal
+        accent={accent}
+        onCancel={() => { setShowReauth(false); pendingAction.current = null; }}
+        onSuccess={() => { setShowReauth(false); pendingAction.current?.(); pendingAction.current = null; }}
+      />
+    )}
     <div>
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
@@ -770,6 +792,7 @@ const MenuTab = () => {
         </div>
       )}
     </div>
+    </>
   );
 };
 

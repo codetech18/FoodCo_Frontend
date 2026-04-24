@@ -145,8 +145,12 @@ const Signup = () => {
     if (!formData.name) return setError("Restaurant name is required.");
     if (!formData.email) return setError("Email is required.");
     if (!formData.password) return setError("Password is required.");
-    if (formData.password.length < 6)
-      return setError("Password must be at least 6 characters.");
+    if (formData.password.length < 8)
+      return setError("Password must be at least 8 characters.");
+    if (!/[A-Z]/.test(formData.password))
+      return setError("Password must contain at least one capital letter.");
+    if (!/[^a-zA-Z0-9]/.test(formData.password))
+      return setError("Password must contain at least one special character.");
     if (formData.password !== formData.confirmPassword)
       return setError("Passwords do not match.");
 
@@ -451,6 +455,22 @@ const Signup = () => {
                         onChange={(v) => updateField("confirmPassword", v)}
                       />
                     </div>
+                    {formData.password && (
+                      <div className="flex gap-4 flex-wrap ml-1">
+                        {[
+                          { label: "8+ chars", ok: formData.password.length >= 8 },
+                          { label: "Capital", ok: /[A-Z]/.test(formData.password) },
+                          { label: "Special char", ok: /[^a-zA-Z0-9]/.test(formData.password) },
+                        ].map(({ label, ok }) => (
+                          <span
+                            key={label}
+                            className={`text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-colors ${ok ? "text-green-400" : "text-white/25"}`}
+                          >
+                            {ok ? "✓" : "○"} {label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 

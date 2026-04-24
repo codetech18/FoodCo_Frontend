@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useRestaurant } from "../context/RestaurantContext";
 import { useParams } from "react-router-dom";
+import ReauthModal, { isReauthValid } from "../components/ReauthModal";
 
 
 const ProfileTab = () => {
@@ -33,6 +34,17 @@ const ProfileTab = () => {
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showReauth, setShowReauth] = useState(false);
+  const pendingAction = useRef(null);
+
+  const withReauth = (action) => {
+    if (isReauthValid()) {
+      action();
+    } else {
+      pendingAction.current = action;
+      setShowReauth(true);
+    }
+  };
   const [banks, setBanks] = useState([
     { name: "Access Bank", code: "044" },
     { name: "Ecobank", code: "050" },
@@ -137,16 +149,12 @@ const ProfileTab = () => {
     }
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
+  const doSave = async () => {
     setSaving(true);
     try {
       await setDoc(
         doc(db, "restaurants", restaurantId, "profile", "info"),
-        {
-          ...form,
-          updatedAt: serverTimestamp(),
-        },
+        { ...form, updatedAt: serverTimestamp() },
         { merge: true },
       );
       setSaved(true);
@@ -158,6 +166,11 @@ const ProfileTab = () => {
     setSaving(false);
   };
 
+  const handleSave = (e) => {
+    e.preventDefault();
+    withReauth(doSave);
+  };
+
   const f = (key) => ({
     value: form[key],
     onChange: (e) => setForm((p) => ({ ...p, [key]: e.target.value })),
@@ -166,6 +179,14 @@ const ProfileTab = () => {
   });
 
   return (
+    <>
+    {showReauth && (
+      <ReauthModal
+        accent={accent}
+        onCancel={() => { setShowReauth(false); pendingAction.current = null; }}
+        onSuccess={() => { setShowReauth(false); pendingAction.current?.(); pendingAction.current = null; }}
+      />
+    )}
     <form onSubmit={handleSave} className="max-w-3xl space-y-8">
       {/* ── Restaurant info (read-only) ── */}
       <div className="bg-[#111111] border border-white/5 p-6">
@@ -549,6 +570,7 @@ const ProfileTab = () => {
         )}
       </button>
     </form>
+    </>
   );
 };
 
