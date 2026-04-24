@@ -181,13 +181,13 @@ const NavBar = () => {
 
             <Link
               to={`/${restaurantId}/menu`}
-              className="px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-[0.15em] transition-all hover:scale-105 active:scale-95 no-underline flex items-center gap-2"
+              className="hidden md:flex px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-[0.15em] transition-all hover:scale-105 active:scale-95 no-underline items-center gap-2"
               style={{
                 background: scrolled ? "white" : accent,
                 color: scrolled ? "black" : "white",
               }}
             >
-              Order <span className="hidden sm:inline">Now</span>
+              Order Now
             </Link>
 
             {/* Mobile Toggle */}
@@ -232,10 +232,17 @@ const NavBar = () => {
           <Link
             to={`/${restaurantId}/menu`}
             onClick={() => setMenuOpen(false)}
-            className="mt-8 px-10 py-5 rounded-full font-black uppercase tracking-widest no-underline text-white"
+            className="text-4xl font-black uppercase italic tracking-tighter text-white/20 hover:text-white transition-colors no-underline"
+          >
+            Menu
+          </Link>
+          <Link
+            to={`/${restaurantId}/order`}
+            onClick={() => setMenuOpen(false)}
+            className="mt-4 px-10 py-5 rounded-full font-black uppercase tracking-widest no-underline text-white"
             style={{ background: accent }}
           >
-            View Menu
+            Order Now
           </Link>
         </div>
       </div>
