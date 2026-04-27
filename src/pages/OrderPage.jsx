@@ -1,10 +1,15 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import NavBar from "../components/NavBar";
 import Order from "../components/Order/Order";
 import Footer from "../components/Footer/Footer";
+import { useRestaurant } from "../context/RestaurantContext";
 
 const OrderPage = () => {
+  const { restaurantId } = useParams();
+  const { profile } = useRestaurant();
+  const accent = profile?.accentColor || "#fa5631";
+
   return (
     <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
       <NavBar />
@@ -20,15 +25,22 @@ const OrderPage = () => {
           }}
         />
         <div className="max-w-7xl mx-auto relative z-10">
-          <div className="inline-flex items-center gap-2 text-[#fa5631] text-xs font-semibold tracking-widest uppercase mb-4">
-            <span className="w-8 h-px bg-[#fa5631]" />
+          <div
+            className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase mb-4"
+            style={{ color: accent }}
+          >
+            <span className="w-8 h-px" style={{ background: accent }} />
             Almost there
           </div>
           <h1 className="font-display text-5xl lg:text-6xl font-black text-white mb-3">
-            Complete your <span className="text-[#fa5631] italic">Order</span>
+            Complete your{" "}
+            <span className="italic" style={{ color: accent }}>
+              Order
+            </span>
           </h1>
           <p className="text-white/40 text-base max-w-lg">
-            Fill in your details below and confirm your order. You'll be able to track it in real time once placed.
+            Fill in your details below and confirm your order. You'll be able to
+            track it in real time once placed.
           </p>
         </div>
       </div>

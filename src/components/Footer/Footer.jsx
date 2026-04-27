@@ -1,91 +1,129 @@
 import React from "react";
-import { CiFacebook, CiLinkedin } from "react-icons/ci";
-import { FaXTwitter, FaInstagram } from "react-icons/fa6";
+import { Link, useParams } from "react-router-dom";
+import { useRestaurant } from "../../context/RestaurantContext";
 
 const Footer = () => {
-  const year = new Date().getFullYear();
+  const { restaurantId } = useParams();
+  const { profile } = useRestaurant();
 
-  const cols = [
-    {
-      title: "Locations",
-      items: ["Ajah", "Abule-Egba", "Lekki", "Yaba", "Ikeja"],
-    },
-    {
-      title: "Quick Links",
-      items: ["Home", "Deals", "Menu", "Order", "Team"],
-      hrefs: ["#Home", "#About", "#Menu", "#Order", "#Team"],
-    },
-    {
-      title: "Contact",
-      items: ["+234 905 897 7101", "+234 905 897 7101", "food@gmail.com", "foodshop@gmail.com"],
-    },
-    {
-      title: "Services",
-      items: ["Fast Delivery", "Easy Payments", "24 × 7 Support", "Dine In"],
-    },
-  ];
+  const name = profile?.name || "FOODco";
+  const accent = profile?.accentColor || "#fa5631";
+  const address = profile?.address || "";
+  const phone = profile?.phone || "";
+  const email = profile?.contactEmail || "";
+  const tagline = profile?.tagline || "Culinary delights, delivered.";
+  const logoUrl = profile?.logoUrl || null;
 
   return (
-    <footer className="bg-[#080808] border-t border-white/5 pt-20 pb-8 relative overflow-hidden">
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#fa5631]/40 to-transparent" />
-
-      <div className="max-w-7xl mx-auto px-6 lg:px-10">
-        <div className="grid grid-cols-1 lg:grid-cols-6 gap-12 mb-14">
-
+    <footer className="bg-[#0a0a0a] border-t border-white/5 pt-16 pb-8 px-6 lg:px-10">
+      <div className="max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-10 mb-12">
           {/* Brand */}
-          <div className="lg:col-span-2">
-            <a href="/" className="inline-flex items-center gap-0.5 mb-5 no-underline">
-              <span className="font-display text-3xl font-black text-white">FOOD</span>
-              <span className="font-display text-3xl font-black text-[#fa5631] italic">co.</span>
-            </a>
-            <p className="text-white/35 text-sm leading-relaxed mb-8 max-w-xs">
-              Experience culinary excellence at FOODco. From farm-fresh ingredients to
-              perfectly crafted dishes — we bring the restaurant to you.
-            </p>
-            <div className="flex items-center gap-3">
-              {[CiFacebook, FaXTwitter, FaInstagram, CiLinkedin].map((Icon, i) => (
-                <button
-                  key={i}
-                  className="w-9 h-9 border border-white/10 hover:border-[#fa5631] hover:bg-[#fa5631]/10 flex items-center justify-center text-white/35 hover:text-[#fa5631] transition-all duration-200 cursor-pointer bg-transparent"
-                >
-                  <Icon className="w-4 h-4" />
-                </button>
-              ))}
+          <div className="md:col-span-1">
+            <div className="flex items-center gap-2 mb-4">
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt={name}
+                  className="h-8 w-auto object-contain"
+                />
+              ) : (
+                <span className="font-display text-xl font-black text-white">
+                  {name}
+                </span>
+              )}
             </div>
+            <p className="text-white/30 text-sm leading-relaxed max-w-xs mb-4">
+              {tagline}
+            </p>
+            {address && <p className="text-white/20 text-xs mb-1">{address}</p>}
+            {phone && <p className="text-white/20 text-xs mb-1">{phone}</p>}
+            {email && <p className="text-white/20 text-xs">{email}</p>}
           </div>
 
-          {/* Link columns */}
-          <div className="lg:col-span-4 grid grid-cols-2 md:grid-cols-4 gap-8">
-            {cols.map(col => (
-              <div key={col.title}>
-                <h4 className="text-white font-semibold text-sm mb-5 tracking-wide">{col.title}</h4>
-                <ul className="space-y-3 list-none">
-                  {col.items.map((item, i) => (
-                    <li key={item}>
-                      {col.hrefs ? (
-                        <a href={col.hrefs[i]} className="text-white/35 hover:text-[#fa5631] text-sm transition-colors duration-200 no-underline">
-                          {item}
-                        </a>
-                      ) : (
-                        <span className="text-white/35 text-sm">{item}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+          {/* Quick links */}
+          <div>
+            <p className="text-white/50 text-xs font-semibold tracking-widest uppercase mb-4">
+              Quick Links
+            </p>
+            <ul className="space-y-3 list-none p-0">
+              {[
+                { label: "Home", to: `/${restaurantId}` },
+                { label: "Menu", to: `/${restaurantId}/menu` },
+                { label: "Order", to: `/${restaurantId}/order` },
+              ].map((link) => (
+                <li key={link.label}>
+                  <Link
+                    to={link.to}
+                    className="text-white/40 hover:text-white text-sm transition-colors no-underline"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Social */}
+          <div>
+            <p className="text-white/50 text-xs font-semibold tracking-widest uppercase mb-4">
+              Follow Us
+            </p>
+            <div className="flex items-center gap-3">
+              {profile?.instagram && (
+                <a
+                  href={profile.instagram}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 border border-white/10 flex items-center justify-center text-white/40 hover:text-white hover:border-white/30 transition-all no-underline"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+                  </svg>
+                </a>
+              )}
+              {profile?.twitter && (
+                <a
+                  href={profile.twitter}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 border border-white/10 flex items-center justify-center text-white/40 hover:text-white hover:border-white/30 transition-all no-underline"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z" />
+                  </svg>
+                </a>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="h-px bg-white/5 mb-7" />
-
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-          <p className="text-white/20 text-xs">© {year} FOODco. All rights reserved.</p>
-          <p className="text-white/20 text-xs flex items-center gap-1">
-            Designed by
-            <span className="text-[#fa5631] font-semibold ml-1">Co</span>
-            <span className="text-white/20 mx-0.5">☺</span>
-            <span className="text-[#fa5631] font-semibold">detech</span>
+        <div className="pt-6 border-t border-white/5 flex items-center justify-between gap-4 flex-wrap">
+          <p className="text-white/20 text-xs">
+            © {new Date().getFullYear()} {name}. All rights reserved.
+          </p>
+          <p className="text-white/10 text-xs">
+            Powered by{" "}
+            <a
+              href="/"
+              className="text-white/20 hover:text-white transition-colors no-underline"
+            >
+              SERVRR
+            </a>
           </p>
         </div>
       </div>

@@ -1,15 +1,20 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import NavBar from "../components/NavBar";
 import Menu from "../components/Menu/Menu";
 import Footer from "../components/Footer/Footer";
 import ActiveOrderBanner from "../components/ActiveOrderBanner";
+import { useRestaurant } from "../context/RestaurantContext";
 
 const MenuPage = () => {
   const navigate = useNavigate();
+  const { restaurantId } = useParams();
+  const { profile } = useRestaurant();
+  const accent = profile?.accentColor || "#fa5631";
 
   return (
-    <div>
-      {/* Active order banner */}
+    <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
+      <NavBar />
       <ActiveOrderBanner />
 
       {/* Page header */}
@@ -23,28 +28,18 @@ const MenuPage = () => {
           }}
         />
         <div className="max-w-7xl mx-auto relative z-10">
-          <button
-            onClick={() => navigate("/")}
-            className="inline-flex items-center gap-2 text-white/40 hover:text-white text-sm font-medium transition-colors mb-8 cursor-pointer bg-transparent border-none group"
+          <div
+            className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase mb-4"
+            style={{ color: accent }}
           >
-            <svg
-              className="w-4 h-4 group-hover:-translate-x-1 transition-transform"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <path d="M19 12H5M12 19l-7-7 7-7" />
-            </svg>
-            Back to Home
-          </button>
-
-          <div className="inline-flex items-center gap-2 text-[#fa5631] text-xs font-semibold tracking-widest uppercase mb-4">
-            <span className="w-8 h-px bg-[#fa5631]" />
+            <span className="w-8 h-px" style={{ background: accent }} />
             Step 1 of 2
           </div>
           <h1 className="font-display text-5xl lg:text-6xl font-black text-white mb-4">
-            Pick your <span className="text-[#fa5631] italic">dishes</span>
+            Pick your{" "}
+            <span className="italic" style={{ color: accent }}>
+              dishes
+            </span>
           </h1>
           <p className="text-white/40 text-lg max-w-xl">
             Browse the menu below, click{" "}
@@ -54,7 +49,10 @@ const MenuPage = () => {
 
           <div className="flex items-center gap-4 mt-8">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-[#fa5631] flex items-center justify-center text-white text-sm font-bold">
+              <div
+                className="w-8 h-8 flex items-center justify-center text-white text-sm font-bold"
+                style={{ background: accent }}
+              >
                 1
               </div>
               <span className="text-white text-sm font-medium">

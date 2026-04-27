@@ -1,10 +1,17 @@
 import React, { Suspense, lazy } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import NavBar from "./components/NavBar";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  useParams,
+  Navigate,
+} from "react-router-dom";
 import { ListItemsAndTotalPriceProvider } from "./Context";
 import { OrderProvider } from "./Context2";
 import { AuthProvider } from "./admin/AuthContext";
 import ProtectedRoute from "./admin/ProtectedRoute";
+import SuperAdminRoute from "./SuperAdminRoute";
+import { RestaurantProvider, useRestaurant } from "./context/RestaurantContext";
 
 const Home = lazy(() => import("./pages/Home"));
 const MenuPage = lazy(() => import("./pages/MenuPage"));
@@ -12,6 +19,17 @@ const OrderPage = lazy(() => import("./pages/OrderPage"));
 const TrackOrder = lazy(() => import("./pages/TrackOrder"));
 const AdminLogin = lazy(() => import("./admin/AdminLogin"));
 const AdminDashboard = lazy(() => import("./admin/AdminDashboard"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const Landing = lazy(() => import("./pages/Landing"));
+const Signup = lazy(() => import("./pages/Signup"));
+const Login = lazy(() => import("./pages/Login"));
+const SuperAdminDashboard = lazy(() => import("./pages/SuperAdminDashboard"));
+const Welcome = lazy(() => import("./pages/Welcome"));
+const AuthAction = lazy(() => import("./pages/AuthAction"));
+const Suspended = lazy(() => import("./pages/Suspended"));
+const Support = lazy(() => import("./pages/Support"));
+const Pricing = lazy(() => import("./pages/Pricing"));
+const SubscriptionExpired = lazy(() => import("./pages/SubscriptionExpired"));
 
 const PageLoader = () => (
   <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -24,75 +42,98 @@ const PageLoader = () => (
   </div>
 );
 
+// Blocks access if suspended OR subscription expired
+const SuspendedGuard = ({ children }) => {
+  const { suspended, subscriptionExpired, loading } = useRestaurant();
+  if (loading) return <PageLoader />;
+  if (suspended) return <Suspended />;
+  if (subscriptionExpired) return <SubscriptionExpired />;
+  return children;
+};
+
+const RestaurantRoutes = () => {
+  const { restaurantId } = useParams();
+  return (
+    <RestaurantProvider restaurantId={restaurantId}>
+      <ListItemsAndTotalPriceProvider>
+        <OrderProvider>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route
+                path="/"
+                element={
+                  <SuspendedGuard>
+                    <Home />
+                  </SuspendedGuard>
+                }
+              />
+              <Route
+                path="/menu"
+                element={
+                  <SuspendedGuard>
+                    <MenuPage />
+                  </SuspendedGuard>
+                }
+              />
+              <Route
+                path="/order"
+                element={
+                  <SuspendedGuard>
+                    <OrderPage />
+                  </SuspendedGuard>
+                }
+              />
+              <Route
+                path="/track/:orderId"
+                element={
+                  <SuspendedGuard>
+                    <TrackOrder />
+                  </SuspendedGuard>
+                }
+              />
+              <Route path="/admin/login" element={<AdminLogin />} />
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute>
+                    <AdminDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </OrderProvider>
+      </ListItemsAndTotalPriceProvider>
+    </RestaurantProvider>
+  );
+};
+
 const App = () => {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <ListItemsAndTotalPriceProvider>
-          <OrderProvider>
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
-                {/* Customer-facing routes */}
-                <Route
-                  path="/"
-                  element={
-                    <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
-                      <NavBar />
-                      <Home />
-                    </div>
-                  }
-                />
-                <Route
-                  path="/menu"
-                  element={
-                    <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
-                      <NavBar />
-                      <MenuPage />
-                    </div>
-                  }
-                />
-                <Route
-                  path="/order"
-                  element={
-                    <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
-                      <OrderPage />
-                    </div>
-                  }
-                />
-
-                {/* Order tracking */}
-                <Route
-                  path="/track/:orderId"
-                  element={
-                    <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
-                      <TrackOrder />
-                    </div>
-                  }
-                />
-
-                {/* Admin routes */}
-                <Route
-                  path="/admin/login"
-                  element={
-                    <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
-                      <AdminLogin />
-                    </div>
-                  }
-                />
-                <Route
-                  path="/admin"
-                  element={
-                    <div className="antialiased bg-[#0a0a0a] text-white overflow-x-hidden">
-                      <ProtectedRoute>
-                        <AdminDashboard />
-                      </ProtectedRoute>
-                    </div>
-                  }
-                />
-              </Routes>
-            </Suspense>
-          </OrderProvider>
-        </ListItemsAndTotalPriceProvider>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/support" element={<Support />} />
+            <Route path="/pricing" element={<Pricing />} />
+            <Route
+              path="/superadmin"
+              element={
+                <SuperAdminRoute>
+                  <SuperAdminDashboard />
+                </SuperAdminRoute>
+              }
+            />
+            <Route path="/welcome" element={<Welcome />} />
+            <Route path="/__/auth/action" element={<AuthAction />} />
+            <Route path="/:restaurantId/*" element={<RestaurantRoutes />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
       </AuthProvider>
     </BrowserRouter>
   );

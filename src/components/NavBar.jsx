@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation, useParams } from "react-router-dom";
+import { useRestaurant } from "../context/RestaurantContext";
+import { X, Moon, Sun, ArrowRight, Menu as MenuIcon } from "lucide-react";
 
 const NavBar = () => {
   const [scrolled, setScrolled] = useState(false);
@@ -7,12 +9,17 @@ const NavBar = () => {
   const [showTrackModal, setShowTrackModal] = useState(false);
   const [trackInput, setTrackInput] = useState("");
   const [trackError, setTrackError] = useState("");
+
   const navigate = useNavigate();
   const location = useLocation();
-  const isMenuPage = location.pathname === "/menu";
+  const { restaurantId } = useParams();
+  const { profile, theme, toggleTheme } = useRestaurant();
+
+  const isMenuPage = location.pathname === `/${restaurantId}/menu`;
+  const accent = profile?.accentColor || "#fa5631";
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
+    const onScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
@@ -20,7 +27,7 @@ const NavBar = () => {
   const handleAnchor = (href) => {
     setMenuOpen(false);
     if (isMenuPage) {
-      navigate("/");
+      navigate(`/${restaurantId}`);
       setTimeout(() => {
         document.querySelector(href)?.scrollIntoView({ behavior: "smooth" });
       }, 100);
@@ -31,206 +38,214 @@ const NavBar = () => {
 
   const handleTrackSubmit = () => {
     const id = trackInput.trim();
-    if (!id) return setTrackError("Please enter your Order ID.");
+    if (!id) return setTrackError("Order ID required.");
     setTrackError("");
     setShowTrackModal(false);
     setTrackInput("");
-    navigate(`/track/${id}`);
+    navigate(`/${restaurantId}/track/${id}`);
   };
-
-  const homeLinks = [
-    { label: "Home", href: "#Home" },
-    { label: "Deals", href: "#About" },
-    { label: "Team", href: "#Team" },
-  ];
 
   return (
     <>
-      {/* Track Order Modal */}
+      {/* --- TRACK ORDER MODAL --- */}
       {showTrackModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
-          <div
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-            onClick={() => setShowTrackModal(false)}
-          />
-          <div className="relative z-10 bg-[#111111] border border-white/10 w-full max-w-sm p-7 shadow-2xl">
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#fa5631] to-transparent" />
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-white font-bold text-base">
-                Track Your Order
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4 backdrop-blur-md bg-black/60">
+          <div className="bg-[#111] border border-white/10 w-full max-w-md p-8 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden">
+            <div
+              className="absolute top-0 left-0 w-full h-1"
+              style={{ background: accent }}
+            />
+
+            <div className="flex justify-between items-center mb-8">
+              <h3 className="text-2xl font-black uppercase italic tracking-tighter text-white">
+                Locate Order
               </h3>
               <button
                 onClick={() => setShowTrackModal(false)}
-                className="text-white/30 hover:text-white bg-transparent border-none cursor-pointer"
+                className="p-2 hover:bg-white/5 rounded-full transition-colors border-none bg-transparent cursor-pointer"
               >
-                <svg
-                  className="w-5 h-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
+                <X size={20} className="text-white/40" />
               </button>
             </div>
-            <p className="text-white/40 text-sm mb-4">
-              Enter the Order ID you received after placing your order.
-            </p>
-            <input
-              type="text"
-              placeholder="Paste your Order ID here"
-              value={trackInput}
-              onChange={(e) => {
-                setTrackInput(e.target.value);
-                setTrackError("");
-              }}
-              onKeyDown={(e) => e.key === "Enter" && handleTrackSubmit()}
-              className="w-full bg-[#1a1a1a] border border-white/10 text-white placeholder-white/25 text-sm px-4 py-3 focus:outline-none focus:border-[#fa5631]/60 transition-colors mb-2"
-            />
-            {trackError && (
-              <p className="text-red-400 text-xs mb-3">{trackError}</p>
-            )}
-            <button
-              onClick={handleTrackSubmit}
-              className="w-full bg-[#fa5631] hover:bg-[#e04420] text-white font-bold py-3 rounded-full transition-all cursor-pointer border-none mt-3"
-            >
-              Track Order
-            </button>
+
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-1">
+                  Unique Order ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="SR-XXXXX"
+                  value={trackInput}
+                  onChange={(e) => {
+                    setTrackInput(e.target.value);
+                    setTrackError("");
+                  }}
+                  className="w-full bg-white/5 border border-white/10 text-white px-5 py-4 rounded-xl focus:outline-none focus:border-white/20 transition-all font-mono"
+                />
+                {trackError && (
+                  <p className="text-red-500 text-xs font-bold uppercase tracking-wider">
+                    {trackError}
+                  </p>
+                )}
+              </div>
+
+              <button
+                onClick={handleTrackSubmit}
+                className="w-full py-5 rounded-xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 transition-transform active:scale-95 cursor-pointer border-none text-white"
+                style={{ background: accent }}
+              >
+                Track Now <ArrowRight size={18} />
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      <nav
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-          scrolled
-            ? "bg-[#0a0a0a]/95 backdrop-blur-md border-b border-white/5 shadow-2xl"
-            : "bg-transparent"
-        }`}
-      >
-        <div className="max-w-7xl mx-auto px-6 lg:px-10 h-20 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-0.5 group no-underline">
-            <span className="font-display text-2xl font-black text-white tracking-tight group-hover:text-[#fa5631] transition-colors duration-300">
-              FOOD
-            </span>
-            <span className="font-display text-2xl font-black text-[#fa5631] italic">
-              co.
+      {/* --- MAIN NAVIGATION --- */}
+      <div className="fixed top-0 left-0 right-0 z-50 flex justify-center p-4 md:p-6 pointer-events-none">
+        <nav
+          className={`
+            pointer-events-auto flex items-center justify-between transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)]
+            ${
+              scrolled
+                ? "w-full max-w-2xl bg-black/80 backdrop-blur-xl border border-white/10 rounded-full px-4 py-2 shadow-2xl"
+                : "w-full max-w-7xl bg-transparent px-2 py-4"
+            }
+          `}
+        >
+          {/* LOGO & NAME SECTION */}
+          <Link
+            to={`/${restaurantId}`}
+            className="flex items-center gap-3 pl-4 group no-underline text-white"
+          >
+            {profile?.logoUrl ? (
+              <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 border border-white/5 transition-transform group-hover:scale-110">
+                <img
+                  src={profile.logoUrl}
+                  alt={profile?.name}
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ) : null}
+            <span
+              className={`font-black tracking-tighter uppercase italic text-xl ${
+                scrolled ? "hidden sm:block" : "block"
+              }`}
+            >
+              {profile?.name || "SERVRR"}
             </span>
           </Link>
 
-          <ul className="hidden md:flex items-center gap-8 list-none">
-            {homeLinks.map((link) => (
+          {/* Desktop Menu */}
+          <ul className="hidden md:flex items-center gap-1 list-none">
+            {[
+              { label: "Deals", onClick: () => handleAnchor("#About") },
+              { label: "Track", onClick: () => setShowTrackModal(true) },
+            ].map((link) => (
               <li key={link.label}>
                 <button
-                  onClick={() => handleAnchor(link.href)}
-                  className="relative text-sm font-medium text-white/60 hover:text-white transition-colors duration-300 group bg-transparent border-none cursor-pointer"
+                  onClick={link.onClick}
+                  className="px-4 py-2 text-[11px] font-black uppercase tracking-widest text-white/40 hover:text-white transition-colors cursor-pointer bg-transparent border-none"
                 >
                   {link.label}
-                  <span className="absolute -bottom-1 left-0 w-0 h-px bg-[#fa5631] group-hover:w-full transition-all duration-300" />
                 </button>
               </li>
             ))}
+
             <li>
               <Link
-                to="/menu"
-                className={`relative text-sm font-medium transition-colors duration-300 group no-underline ${isMenuPage ? "text-[#fa5631]" : "text-white/60 hover:text-white"}`}
+                to={`/${restaurantId}/menu`}
+                className={`px-4 py-2 text-[11px] font-black uppercase tracking-widest transition-colors no-underline ${
+                  isMenuPage ? "text-white" : "text-white/40"
+                }`}
+                style={{ color: isMenuPage ? accent : "" }}
               >
                 Menu
-                <span
-                  className={`absolute -bottom-1 left-0 h-px bg-[#fa5631] transition-all duration-300 ${isMenuPage ? "w-full" : "w-0 group-hover:w-full"}`}
-                />
               </Link>
-            </li>
-            <li>
-              <button
-                onClick={() => setShowTrackModal(true)}
-                className="relative text-sm font-medium text-white/60 hover:text-white transition-colors duration-300 group bg-transparent border-none cursor-pointer"
-              >
-                Track Order
-                <span className="absolute -bottom-1 left-0 w-0 h-px bg-[#fa5631] group-hover:w-full transition-all duration-300" />
-              </button>
             </li>
           </ul>
 
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleTheme}
+              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors cursor-pointer bg-transparent border-none"
+            >
+              {theme === "dark" ? (
+                <Sun size={18} className="text-white/40" />
+              ) : (
+                <Moon size={18} className="text-white/40" />
+              )}
+            </button>
+
+            <Link
+              to={`/${restaurantId}/menu`}
+              className="hidden md:flex px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-[0.15em] transition-all hover:scale-105 active:scale-95 no-underline items-center gap-2"
+              style={{
+                background: scrolled ? "white" : accent,
+                color: scrolled ? "black" : "white",
+              }}
+            >
+              Order Now
+            </Link>
+
+            {/* Mobile Toggle */}
+            <button
+              className="md:hidden w-10 h-10 flex items-center justify-center rounded-full bg-white/5 cursor-pointer border-none text-white"
+              onClick={() => setMenuOpen(!menuOpen)}
+            >
+              {menuOpen ? <X size={20} /> : <MenuIcon size={20} />}
+            </button>
+          </div>
+        </nav>
+      </div>
+
+      {/* --- MOBILE OVERLAY --- */}
+      <div
+        className={`
+        fixed inset-0 z-40 bg-black transition-transform duration-500 md:hidden
+        ${menuOpen ? "translate-y-0" : "-translate-y-full"}
+      `}
+      >
+        <div className="flex flex-col items-center justify-center h-full gap-8">
+          {["Home", "Deals"].map((label) => (
+            <button
+              key={label}
+              onClick={() =>
+                handleAnchor(`#${label === "Home" ? "Home" : "About"}`)
+              }
+              className="text-4xl font-black uppercase italic tracking-tighter text-white/20 hover:text-white transition-colors bg-transparent border-none cursor-pointer"
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            onClick={() => {
+              setMenuOpen(false);
+              setShowTrackModal(true);
+            }}
+            className="text-4xl font-black uppercase italic tracking-tighter text-white/20 hover:text-white transition-colors bg-transparent border-none cursor-pointer"
+          >
+            Track
+          </button>
           <Link
-            to="/menu"
-            className="hidden md:inline-flex items-center gap-2 bg-[#fa5631] hover:bg-[#e04420] text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-all duration-300 hover:scale-105 active:scale-95 no-underline"
+            to={`/${restaurantId}/menu`}
+            onClick={() => setMenuOpen(false)}
+            className="text-4xl font-black uppercase italic tracking-tighter text-white/20 hover:text-white transition-colors no-underline"
+          >
+            Menu
+          </Link>
+          <Link
+            to={`/${restaurantId}/order`}
+            onClick={() => setMenuOpen(false)}
+            className="mt-4 px-10 py-5 rounded-full font-black uppercase tracking-widest no-underline text-white"
+            style={{ background: accent }}
           >
             Order Now
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
           </Link>
-
-          <button
-            className="md:hidden flex flex-col gap-1.5 p-2 cursor-pointer bg-transparent border-none"
-            onClick={() => setMenuOpen(!menuOpen)}
-          >
-            <span
-              className={`w-6 h-0.5 bg-white block transition-all duration-300 ${menuOpen ? "rotate-45 translate-y-2" : ""}`}
-            />
-            <span
-              className={`w-6 h-0.5 bg-white block transition-all duration-300 ${menuOpen ? "opacity-0" : ""}`}
-            />
-            <span
-              className={`w-6 h-0.5 bg-white block transition-all duration-300 ${menuOpen ? "-rotate-45 -translate-y-2" : ""}`}
-            />
-          </button>
         </div>
-
-        <div
-          className={`md:hidden overflow-hidden transition-all duration-300 ${menuOpen ? "max-h-80 border-b border-white/5" : "max-h-0"} bg-[#0a0a0a]/98 backdrop-blur-md`}
-        >
-          <ul className="px-6 py-4 flex flex-col gap-4 list-none">
-            {homeLinks.map((link) => (
-              <li key={link.label}>
-                <button
-                  onClick={() => handleAnchor(link.href)}
-                  className="text-white/60 hover:text-[#fa5631] transition-colors font-medium text-sm bg-transparent border-none cursor-pointer"
-                >
-                  {link.label}
-                </button>
-              </li>
-            ))}
-            <li>
-              <Link
-                to="/menu"
-                className="text-white/60 hover:text-[#fa5631] transition-colors font-medium text-sm no-underline"
-                onClick={() => setMenuOpen(false)}
-              >
-                Menu
-              </Link>
-            </li>
-            <li>
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  setShowTrackModal(true);
-                }}
-                className="text-white/60 hover:text-[#fa5631] transition-colors font-medium text-sm bg-transparent border-none cursor-pointer"
-              >
-                Track Order
-              </button>
-            </li>
-            <li>
-              <Link
-                to="/menu"
-                className="inline-block bg-[#fa5631] text-white text-sm font-semibold px-5 py-2.5 rounded-full no-underline"
-                onClick={() => setMenuOpen(false)}
-              >
-                Order Now
-              </Link>
-            </li>
-          </ul>
-        </div>
-      </nav>
+      </div>
     </>
   );
 };

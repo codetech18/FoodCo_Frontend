@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { getOrderId, clearOrderId } from "../utils/orderCache";
@@ -25,6 +25,7 @@ const STATUS_LABELS = {
 
 const ActiveOrderBanner = () => {
   const navigate = useNavigate();
+  const { restaurantId } = useParams();
   const [orderId, setOrderId] = useState(null);
   const [status, setStatus] = useState(null);
   const [customerName, setCustomerName] = useState("");
@@ -35,26 +36,29 @@ const ActiveOrderBanner = () => {
     if (!id) return;
     setOrderId(id);
 
-    const unsub = onSnapshot(doc(db, "orders", id), (snap) => {
-      if (!snap.exists()) {
-        clearOrderId();
-        setVisible(false);
-        return;
-      }
-      const data = snap.data();
-      setStatus(data.status);
-      setCustomerName(data.customerName || "");
-
-      if (data.status === "completed") {
-        setVisible(true);
-        setTimeout(() => {
+    const unsub = onSnapshot(
+      doc(db, "restaurants", restaurantId, "orders", id),
+      (snap) => {
+        if (!snap.exists()) {
           clearOrderId();
           setVisible(false);
-        }, 10000);
-      } else {
-        setVisible(true);
-      }
-    });
+          return;
+        }
+        const data = snap.data();
+        setStatus(data.status);
+        setCustomerName(data.customerName || "");
+
+        if (data.status === "completed") {
+          setVisible(true);
+          setTimeout(() => {
+            clearOrderId();
+            setVisible(false);
+          }, 10000);
+        } else {
+          setVisible(true);
+        }
+      },
+    );
 
     return unsub;
   }, []);
@@ -85,7 +89,7 @@ const ActiveOrderBanner = () => {
         <div className="flex items-center gap-2 flex-shrink-0">
           {status !== "completed" && (
             <button
-              onClick={() => navigate(`/track/${orderId}`)}
+              onClick={() => navigate(`/${restaurantId}/track/${orderId}`)}
               className="text-xs font-bold px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 transition-all cursor-pointer rounded-full"
             >
               Track Order →

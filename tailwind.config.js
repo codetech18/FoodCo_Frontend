@@ -4,19 +4,23 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ['"Playfair Display"', 'serif'],
-        sans: ['"DM Sans"', 'sans-serif'],
+        // Clash Display for all font-display headings
+        display: ["'Clash Display'", "sans-serif"],
+        // Plus Jakarta Sans for body text
+        sans: ["'Plus Jakarta Sans'", "sans-serif"],
+        //display: ['"Playfair Display"', 'serif'],
+        //sans: ['"DM Sans"', 'sans-serif'],
       },
       colors: {
-        accent: '#fa5631',
+        accent: "#fa5631",
         dark: {
-          900: '#0a0a0a',
-          800: '#111111',
-          700: '#1a1a1a',
-          600: '#222222',
-        }
+          900: "#0a0a0a",
+          800: "#111111",
+          700: "#1a1a1a",
+          600: "#222222",
+        },
       },
     },
   },
   plugins: [],
-}
+};

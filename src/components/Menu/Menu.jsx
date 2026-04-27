@@ -3,17 +3,19 @@ import { FaStar } from "react-icons/fa";
 import { IoMdStarHalf } from "react-icons/io";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "../../firebase/config";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useOrder } from "../../Context2";
+import { useRestaurant } from "../../context/RestaurantContext";
+import { generateToken, saveTableSession } from "../../utils/tableToken";
 
-const categories = ["All", "Mains", "Drinks", "Breakfast"];
+const CATEGORIES = ["All", "Mains", "Drinks", "Breakfast"];
 
-const StarRow = () => (
+const StarRow = ({ accent }) => (
   <div className="flex items-center gap-0.5">
     {[1, 2, 3, 4].map((i) => (
-      <FaStar key={i} className="text-[#fa5631] w-3 h-3" />
+      <FaStar key={i} style={{ color: accent }} className="w-3 h-3" />
     ))}
-    <IoMdStarHalf className="text-[#fa5631] w-3 h-3" />
+    <IoMdStarHalf style={{ color: accent }} className="w-3 h-3" />
     <span className="text-white/30 text-xs ml-1">4.5</span>
   </div>
 );
@@ -34,23 +36,59 @@ const SkeletonCard = () => (
 );
 
 const Menu = () => {
+  const { restaurantId } = useParams();
+  const { profile } = useRestaurant();
+  const accent = profile?.accentColor || "#fa5631";
+
   const { quantities, increment, decrement, totalCount } = useOrder();
   const [activeCategory, setActiveCategory] = useState("All");
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  const [searchParams] = useSearchParams();
+  const tableParam = searchParams.get("table") || "";
+  const tokenParam = searchParams.get("token") || "";
+
+  // ── Validate token from QR scan and save session ──────────────────────────
   useEffect(() => {
-    const q = query(collection(db, "menu"), orderBy("createdAt", "asc"));
-    const unsub = onSnapshot(q, (snap) => {
-      const items = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((item) => item.available !== false);
-      setMenuItems(items);
-      setLoading(false);
-    });
+    if (!tableParam || !tokenParam || !restaurantId) return;
+    const expected = generateToken(restaurantId, tableParam);
+    if (tokenParam === expected) {
+      // If scanning a different table, clear the old table session first
+      const existingSession = JSON.parse(
+        localStorage.getItem("servrr_table_session") || "null",
+      );
+      if (existingSession && existingSession.table !== tableParam) {
+        localStorage.removeItem("servrr_table_session");
+      }
+      saveTableSession(restaurantId, tableParam, tokenParam);
+    }
+  }, [tableParam, tokenParam, restaurantId]);
+
+  // ── Load menu ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!restaurantId) return;
+    const q = query(
+      collection(db, "restaurants", restaurantId, "menu"),
+      orderBy("createdAt", "asc"),
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const items = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((item) => item.available !== false);
+        setMenuItems(items);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Menu error:", err);
+        setLoading(false);
+      },
+    );
     return unsub;
-  }, []);
+  }, [restaurantId]);
 
   const filtered =
     activeCategory === "All"
@@ -65,18 +103,31 @@ const Menu = () => {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-14">
           <div>
-            <div className="inline-flex items-center gap-2 text-[#fa5631] text-xs font-semibold tracking-widest uppercase mb-3">
-              <span className="w-8 h-px bg-[#fa5631]" />
+            <div
+              className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase mb-3"
+              style={{ color: accent }}
+            >
+              <span className="w-8 h-px" style={{ background: accent }} />
               What we serve
             </div>
             <h2 className="font-display text-5xl lg:text-7xl font-black text-white leading-none">
-              Our <span className="text-[#fa5631] italic">Menu</span>
+              Our{" "}
+              <span className="italic" style={{ color: accent }}>
+                Menu
+              </span>
             </h2>
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
             {totalCount > 0 && (
-              <div className="flex items-center gap-2 bg-[#fa5631]/15 border border-[#fa5631]/30 text-[#fa5631] text-xs font-semibold px-3 py-2">
+              <div
+                className="flex items-center gap-2 text-xs font-semibold px-3 py-2"
+                style={{
+                  background: `${accent}26`,
+                  border: `1px solid ${accent}4d`,
+                  color: accent,
+                }}
+              >
                 <svg
                   className="w-3.5 h-3.5"
                   viewBox="0 0 24 24"
@@ -91,15 +142,24 @@ const Menu = () => {
                 {totalCount} item{totalCount !== 1 ? "s" : ""} in order
               </div>
             )}
-            {categories.map((cat) => (
+            {CATEGORIES.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-2 text-xs font-semibold tracking-wide uppercase transition-all duration-200 border cursor-pointer ${
+                className="px-4 py-2 text-xs font-semibold tracking-wide uppercase transition-all duration-200 border cursor-pointer"
+                style={
                   activeCategory === cat
-                    ? "bg-[#fa5631] border-[#fa5631] text-white"
-                    : "border-white/15 text-white/50 hover:border-white/40 hover:text-white bg-transparent"
-                }`}
+                    ? {
+                        background: accent,
+                        borderColor: accent,
+                        color: "white",
+                      }
+                    : {
+                        background: "transparent",
+                        borderColor: "rgba(255,255,255,0.15)",
+                        color: "rgba(255,255,255,0.5)",
+                      }
+                }
               >
                 {cat}
               </button>
@@ -124,11 +184,11 @@ const Menu = () => {
               return (
                 <div
                   key={item.id}
-                  className={`group bg-[#111111] border transition-all duration-300 overflow-hidden flex flex-col ${
-                    qty > 0
-                      ? "border-[#fa5631]/40"
-                      : "border-white/5 hover:border-[#fa5631]/20"
-                  }`}
+                  className="group bg-[#111111] border transition-all duration-300 overflow-hidden flex flex-col"
+                  style={{
+                    borderColor:
+                      qty > 0 ? `${accent}66` : "rgba(255,255,255,0.05)",
+                  }}
                 >
                   <div className="relative h-48 overflow-hidden bg-[#1a1a1a]">
                     {item.imageUrl ? (
@@ -158,7 +218,10 @@ const Menu = () => {
                       {item.category}
                     </div>
                     {qty > 0 && (
-                      <div className="absolute top-3 right-3 w-7 h-7 bg-[#fa5631] rounded-full flex items-center justify-center text-white text-xs font-black shadow-lg">
+                      <div
+                        className="absolute top-3 right-3 w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-black shadow-lg"
+                        style={{ background: accent }}
+                      >
                         {qty}
                       </div>
                     )}
@@ -171,9 +234,12 @@ const Menu = () => {
                     <p className="text-white/40 text-xs leading-relaxed mb-3 flex-1">
                       {item.description}
                     </p>
-                    <StarRow />
+                    <StarRow accent={accent} />
                     <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
-                      <span className="text-[#fa5631] font-bold text-base">
+                      <span
+                        className="font-bold text-base"
+                        style={{ color: accent }}
+                      >
                         ₦{Number(item.price || 0).toLocaleString()}
                       </span>
                       {qty === 0 ? (
@@ -181,26 +247,48 @@ const Menu = () => {
                           onClick={() =>
                             increment(item.name, String(item.price))
                           }
-                          className="text-xs font-semibold px-4 py-1.5 bg-transparent hover:bg-[#fa5631] text-white border border-white/15 hover:border-[#fa5631] transition-all duration-200 cursor-pointer"
+                          className="text-xs font-semibold px-4 py-1.5 bg-transparent text-white border border-white/15 transition-all duration-200 cursor-pointer"
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = accent;
+                            e.currentTarget.style.borderColor = accent;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "transparent";
+                            e.currentTarget.style.borderColor =
+                              "rgba(255,255,255,0.15)";
+                          }}
                         >
                           + Add
                         </button>
                       ) : (
-                        <div className="flex items-center gap-0">
+                        <div className="flex items-center">
                           <button
                             onClick={() => decrement(item.name)}
-                            className="w-8 h-8 flex items-center justify-center bg-white/8 hover:bg-red-500/80 text-white border border-white/10 hover:border-red-500 transition-all duration-200 cursor-pointer text-base font-bold border-none"
+                            className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-red-500/80 text-white border border-white/10 hover:border-red-500 transition-all duration-200 cursor-pointer text-base font-bold"
                           >
                             −
                           </button>
-                          <div className="w-8 h-8 flex items-center justify-center bg-[#fa5631] text-white text-sm font-black">
+                          <div
+                            className="w-8 h-8 flex items-center justify-center text-white text-sm font-black"
+                            style={{ background: accent }}
+                          >
                             {qty}
                           </div>
                           <button
                             onClick={() =>
                               increment(item.name, String(item.price))
                             }
-                            className="w-8 h-8 flex items-center justify-center bg-white/8 hover:bg-[#fa5631] text-white border border-white/10 hover:border-[#fa5631] transition-all duration-200 cursor-pointer text-base font-bold border-none"
+                            className="w-8 h-8 flex items-center justify-center bg-white/5 text-white border border-white/10 transition-all duration-200 cursor-pointer text-base font-bold"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = accent;
+                              e.currentTarget.style.borderColor = accent;
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background =
+                                "rgba(255,255,255,0.05)";
+                              e.currentTarget.style.borderColor =
+                                "rgba(255,255,255,0.1)";
+                            }}
                           >
                             +
                           </button>
@@ -214,21 +302,46 @@ const Menu = () => {
           )}
         </div>
 
-        {/* CTA — navigates to /order page */}
+        {/* Proceed CTA */}
         {!loading && menuItems.length > 0 && (
           <div className="flex flex-col items-center gap-3 mt-14">
             <button
-              onClick={() => totalCount > 0 && navigate("/order")}
+              onClick={() =>
+                totalCount > 0 &&
+                navigate(
+                  `/${restaurantId}/order${tableParam ? `?table=${tableParam}` : ""}`,
+                )
+              }
               disabled={totalCount === 0}
-              className={`group inline-flex items-center gap-3 font-semibold px-10 py-4 rounded-full transition-all duration-300 ${
+              className="group inline-flex items-center gap-3 font-semibold px-10 py-4 rounded-full transition-all duration-300 bg-transparent cursor-pointer"
+              style={
                 totalCount > 0
-                  ? "border border-[#fa5631] text-[#fa5631] hover:bg-[#fa5631] hover:text-white cursor-pointer bg-transparent"
-                  : "border border-white/10 text-white/20 cursor-not-allowed bg-transparent"
-              }`}
+                  ? { border: `1px solid ${accent}`, color: accent }
+                  : {
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      color: "rgba(255,255,255,0.2)",
+                      cursor: "not-allowed",
+                    }
+              }
+              onMouseEnter={(e) => {
+                if (totalCount > 0) {
+                  e.currentTarget.style.background = accent;
+                  e.currentTarget.style.color = "white";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (totalCount > 0) {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = accent;
+                }
+              }}
             >
               Proceed to Order
               {totalCount > 0 && (
-                <span className="bg-[#fa5631] group-hover:bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full">
+                <span
+                  className="text-white text-xs font-black px-2 py-0.5 rounded-full"
+                  style={{ background: accent }}
+                >
                   {totalCount}
                 </span>
               )}
