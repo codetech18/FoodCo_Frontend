@@ -19,7 +19,7 @@ import { useListItemsAndTotalPrice } from "../../Context";
 import { useOrder } from "../../Context2";
 import { saveOrderId } from "../../utils/orderCache";
 import { useRestaurant } from "../../context/RestaurantContext";
-import { getTableSession, clearTableSession } from "../../utils/tableToken";
+import { getTableSession } from "../../utils/tableToken";
 import {
   getSession,
   saveSession,
@@ -208,10 +208,8 @@ const Order = () => {
   const paymentMode = profile?.paymentMode || "at_table";
 
   const tableToken = getTableSession(restaurantId);
-  // Re-read session fresh — it may have been cleared by a new QR scan in Menu.jsx
   const tableSessionLocal = getSession(restaurantId);
 
-  // If tableToken table doesn't match the stored session table, treat as fresh start
   const isNewTable =
     tableToken &&
     tableSessionLocal &&
@@ -249,32 +247,36 @@ const Order = () => {
   const [monthOrderCount, setMonthOrderCount] = useState(null);
   const paymentSuccessRef = useRef(false);
   const paymentTimeoutRef = useRef(null);
+  const isPayingRef = useRef(false);
 
-  // Pre-load this month's order count for Starter plan cap check (keeps Paystack open synchronous)
+  // Pre-load this month's order count for Starter plan cap check
   useEffect(() => {
     if (!restaurantId || profile?.plan !== "starter") return;
     const now = new Date();
-    const startOfMonth = Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    const startOfMonth = Timestamp.fromDate(
+      new Date(now.getFullYear(), now.getMonth(), 1),
+    );
     getDocs(
       query(
         collection(db, "restaurants", restaurantId, "orders"),
         where("createdAt", ">=", startOfMonth),
       ),
-    ).then((snap) => setMonthOrderCount(snap.size)).catch(() => {});
+    )
+      .then((snap) => setMonthOrderCount(snap.size))
+      .catch(() => {});
   }, [restaurantId, profile?.plan]);
 
-  // ── Reset session state when a fresh QR scan is detected ────────────────
+  // Reset session state when a fresh QR scan is detected
   useEffect(() => {
-    // Fresh start: no active session OR scanning a different table
     if ((!tableSessionLocal && tableToken) || isNewTable) {
       setSessionStatus("open");
       setSessionId(null);
       setSessionTotal(0);
       setBillRequested(false);
     }
-  }, []);
+  }, [tableSessionLocal, tableToken, isNewTable]);
 
-  // ── Live listener on the Firestore session so customer sees updates instantly ──
+  // Live listener on the Firestore session
   useEffect(() => {
     const sid = activeSession?.firestoreId || sessionId;
     if (!sid || !restaurantId) return;
@@ -287,7 +289,6 @@ const Order = () => {
         setSessionTotal(data.totalBill || 0);
         if (data.status === "awaiting_payment") setBillRequested(true);
         if (data.status === "paid" || data.status === "closed") {
-          // Staff closed the bill — clear local session and show completion screen
           clearSession();
           setBillRequested(false);
           setSessionStatus(data.status);
@@ -295,7 +296,7 @@ const Order = () => {
       },
     );
     return unsub;
-  }, [sessionId, restaurantId]);
+  }, [sessionId, restaurantId, activeSession]);
 
   const navigate = useNavigate();
   const { listItemsAndTotalPrice } = useListItemsAndTotalPrice();
@@ -317,11 +318,26 @@ const Order = () => {
     0,
   );
 
-  // ── Open or retrieve a Firestore table session ────────────────────────────
+  // Helper to load Paystack script
+  const loadPaystackScript = () => {
+    return new Promise((resolve, reject) => {
+      if (window.PaystackPop) return resolve();
+      // Remove any existing script to avoid conflicts (clean reload)
+      document
+        .querySelectorAll('script[src*="js.paystack.co"]')
+        .forEach((script) => script.remove());
+      const script = document.createElement("script");
+      script.src = "https://js.paystack.co/v1/inline.js";
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Failed to load Paystack SDK"));
+      document.body.appendChild(script);
+    });
+  };
+
+  // Open or retrieve a Firestore table session
   const getOrCreateSession = async (orderTotal) => {
-    // Check for existing open session for this table
     if (tableSessionLocal?.firestoreId) {
-      // Update existing session total
       const newTotal = (tableSessionLocal.totalBill || 0) + orderTotal;
       await updateDoc(
         doc(
@@ -338,11 +354,10 @@ const Order = () => {
       return tableSessionLocal.firestoreId;
     }
 
-    // Create new session
     const sessionRef = await addDoc(
       collection(db, "restaurants", restaurantId, "tableSessions"),
       {
-        table,
+        table: table,
         status: "open",
         openedAt: serverTimestamp(),
         totalBill: orderTotal,
@@ -354,7 +369,7 @@ const Order = () => {
     const localSession = {
       restaurantId,
       firestoreId: sessionRef.id,
-      table,
+      table: table,
       status: "open",
       totalBill: orderTotal,
       paymentMode,
@@ -377,7 +392,7 @@ const Order = () => {
     const orderData = {
       customerName: name,
       email,
-      table,
+      table: table,
       allergies,
       items,
       total: totalValue,
@@ -417,7 +432,8 @@ const Order = () => {
   };
 
   const handleSubmit = async () => {
-    if (submitting) return;
+    // Prevent multiple submissions
+    if (submitting || isPayingRef.current) return;
     if (!name) return window.alert("Please enter your name.");
     if (!email) return window.alert("Please enter your email.");
     if (!allergies)
@@ -428,7 +444,11 @@ const Order = () => {
 
     setPaymentError(null);
 
-    if (profile?.plan === "starter" && monthOrderCount !== null && monthOrderCount >= 300) {
+    if (
+      profile?.plan === "starter" &&
+      monthOrderCount !== null &&
+      monthOrderCount >= 300
+    ) {
       return window.alert(
         "This restaurant has reached its 300 orders/month limit on the Starter plan. Please try again next month or ask the restaurant to upgrade their plan.",
       );
@@ -440,74 +460,114 @@ const Order = () => {
           "Online payment is not configured for this restaurant yet.",
         );
       }
-      if (!window.PaystackPop) {
-        return window.alert(
-          "Payment system failed to load. Please refresh the page and try again.",
-        );
-      }
       if (!import.meta.env.VITE_PAYSTACK_PUBLIC_KEY) {
         return window.alert(
           "Payment is not configured yet. Please contact the restaurant.",
         );
       }
 
+      isPayingRef.current = true;
       setSubmitting(true);
       paymentSuccessRef.current = false;
 
-      // Safety net — if Paystack callbacks never fire (mobile bug), reset after 3 min
-      clearTimeout(paymentTimeoutRef.current);
+      try {
+        await loadPaystackScript();
+      } catch (err) {
+        setSubmitting(false);
+        isPayingRef.current = false;
+        setPaymentError(
+          "Payment system failed to load. Please refresh and try again.",
+        );
+        return;
+      }
+
+      // Clear any existing timeout
+      if (paymentTimeoutRef.current) clearTimeout(paymentTimeoutRef.current);
       paymentTimeoutRef.current = setTimeout(() => {
         if (!paymentSuccessRef.current) {
           setSubmitting(false);
-          setPaymentError("Payment window closed or timed out. Please try again.");
+          isPayingRef.current = false;
+          setPaymentError(
+            "Payment window closed or timed out. Please try again.",
+          );
         }
       }, 180000);
 
-      const handler = window.PaystackPop.setup({
-        key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-        email,
-        amount: Math.round(totalValue * 100),
-        currency: "NGN",
-        ref: `SERVRR-${restaurantId}-${Date.now()}`,
-        subaccount: profile.paystackSubaccountCode,
-        transaction_charge: 0,
-        bearer: "subaccount",
-        metadata: { restaurantId, table, customerName: name },
-        onClose: () => {
-          clearTimeout(paymentTimeoutRef.current);
-          if (!paymentSuccessRef.current) {
-            setSubmitting(false);
-            setPaymentError("Payment was cancelled. Your order was not placed.");
-          }
-        },
-        callback: async (response) => {
-          clearTimeout(paymentTimeoutRef.current);
-          paymentSuccessRef.current = true;
+      const onClosePlain = () => {
+        clearTimeout(paymentTimeoutRef.current);
+        if (!paymentSuccessRef.current) {
+          setSubmitting(false);
+          isPayingRef.current = false;
+          setPaymentError("Payment was cancelled. Your order was not placed.");
+        }
+      };
+
+      const callbackPlain = (response) => {
+        clearTimeout(paymentTimeoutRef.current);
+        paymentSuccessRef.current = true;
+
+        (async () => {
           try {
-            const verifyRes = await fetch("https://foodco-backend.onrender.com/verify-payment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ reference: response.reference }),
-            });
+            const verifyRes = await fetch(
+              `${import.meta.env.VITE_BACKEND_URL || "https://foodco-backend.onrender.com"}/verify-payment`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reference: response.reference }),
+              },
+            );
             const verifyData = await verifyRes.json();
             if (!verifyData.success) {
-              window.alert("Payment verification failed. Please show this reference to staff: " + response.reference);
+              window.alert(
+                "Payment verification failed. Please show this reference to staff: " +
+                  response.reference,
+              );
               setSubmitting(false);
+              isPayingRef.current = false;
               return;
             }
             await saveOrderToFirestore(response.reference);
           } catch (err) {
             console.error("Order save error:", err);
-            window.alert("Payment received but order failed to save. Please show your payment reference to staff: " + response.reference);
+            window.alert(
+              "Payment received but order failed to save. Please show your payment reference to staff: " +
+                response.reference,
+            );
           } finally {
             setSubmitting(false);
+            isPayingRef.current = false;
           }
-        },
-      });
+        })();
+      };
+
+      let handler;
+      try {
+        handler = window.PaystackPop.setup({
+          key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+          email: email,
+          amount: Math.round(totalValue * 100),
+          currency: "NGN",
+          ref: `SERVRR-${restaurantId}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          subaccount: profile.paystackSubaccountCode,
+          transaction_charge: 0,
+          bearer: "subaccount",
+          metadata: { restaurantId, table: table, customerName: name },
+          onClose: onClosePlain,
+          callback: callbackPlain,
+        });
+      } catch (setupError) {
+        console.error("Paystack setup error:", setupError);
+        setSubmitting(false);
+        isPayingRef.current = false;
+        setPaymentError("Payment setup failed: " + setupError.message);
+        return;
+      }
+
       handler.openIframe();
       return;
     }
 
+    // ---- Pay at table (offline) flow ----
     setSubmitting(true);
     try {
       await saveOrderToFirestore();
@@ -550,7 +610,7 @@ const Order = () => {
   const labelCls =
     "block text-white/40 text-xs font-semibold tracking-widest uppercase mb-2";
 
-  // ── No valid table token — show scan prompt ───────────────────────────────
+  // ─── PRODUCTION TABLE TOKEN CHECK ───────────────────────────────────────────
   if (!tableToken) {
     return (
       <section
@@ -595,7 +655,7 @@ const Order = () => {
     );
   }
 
-  // ── Staff marked as paid/closed ──────────────────────────────────────────
+  // Staff marked as paid/closed
   if (sessionStatus === "paid" || sessionStatus === "closed") {
     const handleNewOrder = () => {
       clearSession();
@@ -645,7 +705,6 @@ const Order = () => {
               We hope to see you again soon. 🙏
             </p>
 
-            {/* Allow starting a fresh order — e.g. ordering dessert after paying */}
             {tableToken && (
               <button
                 onClick={handleNewOrder}
@@ -678,7 +737,7 @@ const Order = () => {
     );
   }
 
-  // ── Bill already requested ────────────────────────────────────────────────
+  // Bill already requested
   if (billRequested) {
     return (
       <section
@@ -692,6 +751,7 @@ const Order = () => {
     );
   }
 
+  // ─── MAIN ORDER FORM ──────────────────────────────────────────────────────
   return (
     <>
       {showModal && (
@@ -949,11 +1009,18 @@ const Order = () => {
                       color: accent,
                     }}
                   >
-                    <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg
+                      className="w-4 h-4 flex-shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
                       <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
                       <line x1="1" y1="10" x2="23" y2="10" />
                     </svg>
-                    You will be redirected to Paystack to complete payment before your order is confirmed.
+                    You will be redirected to Paystack to complete payment
+                    before your order is confirmed.
                   </div>
                 )}
 
@@ -978,8 +1045,8 @@ const Order = () => {
                       {paymentMode === "pay_online"
                         ? `Pay ₦${totalPrice}`
                         : sessionTotal > 0
-                        ? "Add to Bill"
-                        : "Confirm Order"}
+                          ? "Add to Bill"
+                          : "Confirm Order"}
                       {totalCount > 0 && (
                         <span className="bg-white/20 text-xs font-black px-2 py-0.5 rounded-full">
                           {totalCount} item{totalCount !== 1 ? "s" : ""}
@@ -989,7 +1056,6 @@ const Order = () => {
                   )}
                 </button>
 
-                {/* Request bill button — only shown if session is open */}
                 {sessionId && (
                   <button
                     type="button"

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
-// --- Custom SVG Icons to keep zero dependencies ---
+// --- Custom Premium Icons ---
 const Icons = {
   Menu: () => (
     <svg
@@ -98,7 +98,7 @@ const Icons = {
       <path d="m19 9-5 5-4-4-3 3" />
     </svg>
   ),
-  ArrowRight: () => (
+  ArrowRight: ({ className }) => (
     <svg
       width="20"
       height="20"
@@ -108,6 +108,7 @@ const Icons = {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
+      className={className}
     >
       <line x1="5" y1="12" x2="19" y2="12" />
       <polyline points="12 5 19 12 12 19" />
@@ -115,15 +116,91 @@ const Icons = {
   ),
 };
 
+// --- Custom Intersection Observer Component for Scroll Animations ---
+const ScrollReveal = ({
+  children,
+  className = "",
+  delay = 0,
+  effect = "slide-up",
+}) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const domRef = useRef();
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true);
+            observer.unobserve(domRef.current);
+          }
+        });
+      },
+      { threshold: 0.15 }, // Triggers when 15% of the element is visible
+    );
+
+    if (domRef.current) observer.observe(domRef.current);
+    return () => {
+      if (domRef.current) observer.unobserve(domRef.current);
+    };
+  }, []);
+
+  const getEffectClasses = () => {
+    switch (effect) {
+      case "scale":
+        return isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95";
+      case "fade":
+        return isVisible ? "opacity-100" : "opacity-0";
+      case "slide-up":
+      default:
+        return isVisible
+          ? "opacity-100 translate-y-0"
+          : "opacity-0 translate-y-12";
+    }
+  };
+
+  return (
+    <div
+      ref={domRef}
+      className={`transition-all duration-1000 ease-out ${getEffectClasses()} ${className}`}
+      style={{ transitionDelay: `${delay}ms` }}
+    >
+      {children}
+    </div>
+  );
+};
+
 const Landing = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [typewriterText, setTypewriterText] = useState("");
+
+  const fullText = "Online in minutes.";
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+
+    // Typewriter effect logic
+    let i = 0;
+    const typeInterval = setInterval(() => {
+      setTypewriterText(fullText.slice(0, i));
+      i++;
+      if (i > fullText.length) clearInterval(typeInterval);
+    }, 80);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      clearInterval(typeInterval);
+    };
   }, []);
+
+  const dashboardItems = [
+    { name: "Jollof Rice (Large)", time: "2m ago", price: "₦4,500" },
+    { name: "Egusi & Pounded Yam", time: "5m ago", price: "₦5,200" },
+    { name: "Grilled Croaker", time: "12m ago", price: "₦8,000" },
+    { name: "Chapman Cocktail", time: "15m ago", price: "₦2,500" },
+  ];
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-[#fa5631] selection:text-black overflow-x-hidden">
@@ -131,7 +208,7 @@ const Landing = () => {
       <div
         className="fixed inset-0 z-0 pointer-events-none opacity-[0.03]"
         style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
         }}
       />
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-[#fa5631] opacity-10 blur-[150px] rounded-full pointer-events-none" />
@@ -151,21 +228,25 @@ const Landing = () => {
             SERVRR
           </Link>
 
-          {/* Desktop Nav */}
+          {/* --- UPDATED NAVIGATION LINKS --- */}
           <div className="hidden md:flex items-center gap-8">
+            {/* Features stays as an anchor for on-page scrolling */}
             <a
               href="#features"
               className="text-sm font-medium text-white/60 hover:text-white transition-colors"
             >
               Features
             </a>
-            <a
-              href="/pricing"
+
+            {/* Pricing uses Link for routing */}
+            <Link
+              to="/pricing"
               className="text-sm font-medium text-white/60 hover:text-white transition-colors"
             >
               Pricing
-            </a>
+            </Link>
 
+            {/* Support uses Link for routing */}
             <Link
               to="/support"
               className="text-sm font-medium text-white/60 hover:text-white transition-colors"
@@ -182,14 +263,13 @@ const Landing = () => {
               Login
             </Link>
             <Link
-              to="/support#contact"
+              to="/support"
               className="text-sm font-bold bg-white text-black px-6 py-2.5 rounded-full hover:bg-[#fa5631] hover:text-white transition-all duration-300 transform hover:-translate-y-0.5"
             >
               Get Invite
             </Link>
           </div>
 
-          {/* Mobile Toggle */}
           <button
             className="md:hidden text-white/80"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -197,150 +277,127 @@ const Landing = () => {
             {mobileMenuOpen ? <Icons.X /> : <Icons.Menu />}
           </button>
         </div>
-
-        {/* Mobile Menu */}
-        <div
-          className={`md:hidden absolute top-full left-0 w-full bg-[#0a0a0a] border-b border-white/5 overflow-hidden transition-all duration-300 ${mobileMenuOpen ? "max-h-96 py-6" : "max-h-0"}`}
-        >
-          <div className="flex flex-col px-6 gap-6">
-            <a
-              href="#features"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-white/80"
-            >
-              Features
-            </a>
-            <a
-              href="#pricing"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-white/80"
-            >
-              Pricing
-            </a>
-            <Link
-              to="/billing"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-white/80"
-            >
-              Billing Dashboard
-            </Link>
-            <Link
-              to="/login"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-white/80"
-            >
-              Login
-            </Link>
-            <Link
-              to="/signup"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-bold bg-[#fa5631] text-white text-center py-3 rounded-xl mt-2"
-            >
-              Get Invite
-            </Link>
-          </div>
-        </div>
       </nav>
 
       {/* --- Hero Section --- */}
       <section className="relative z-10 pt-40 pb-20 lg:pt-52 lg:pb-32 px-6 overflow-hidden">
         <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 lg:gap-8 items-center">
-          {/* Hero Copy */}
           <div className="flex flex-col items-start text-left">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-white/70 mb-8 uppercase tracking-widest backdrop-blur-sm">
-              <span className="w-2 h-2 rounded-full bg-[#fa5631] animate-pulse" />
-              Built for the African Table
+            <div className="animate-reveal-up opacity-0 [animation-fill-mode:forwards]">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-white/70 mb-8 uppercase tracking-widest backdrop-blur-sm">
+                <span className="w-2 h-2 rounded-full bg-[#fa5631] animate-pulse" />
+                Built for the African Table
+              </div>
             </div>
 
-            <h1 className="font-display text-5xl md:text-7xl lg:text-[5rem] font-black leading-[1.05] tracking-tight mb-6">
-              Your menu. <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-white to-white/40">
+            <h1 className="font-display text-5xl md:text-7xl lg:text-[5.5rem] font-black leading-[1.05] tracking-tight mb-6">
+              <span className="block animate-reveal-up opacity-0 [animation-fill-mode:forwards] [animation-delay:200ms]">
+                Your menu.
+              </span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-white to-white/40 block animate-reveal-up opacity-0 [animation-fill-mode:forwards] [animation-delay:400ms]">
                 Your brand.
               </span>
-              <br />
-              <span className="text-[#fa5631]">Online in minutes.</span>
+              <span className="text-[#fa5631] block min-h-[1.1em]">
+                {typewriterText}
+                <span className="inline-block w-[4px] h-[0.8em] bg-[#fa5631] ml-2 animate-cursor-blink" />
+              </span>
             </h1>
 
-            <p className="text-lg md:text-xl text-white/50 max-w-lg mb-10 leading-relaxed font-light">
-              The complete digital ordering system designed specifically for
-              forward-thinking Nigerian restaurants. No apps. No friction. Just
-              orders.
+            <p className="text-lg md:text-xl text-white/50 max-w-lg mb-10 leading-relaxed font-light animate-reveal-up opacity-0 [animation-fill-mode:forwards] [animation-delay:600ms]">
+              The complete digital ordering system designed for forward-thinking
+              Nigerian kitchens. No apps. No friction. Just orders.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto animate-reveal-up opacity-0 [animation-fill-mode:forwards] [animation-delay:800ms]">
               <Link
-                to="/support#contact"
+                to="/signup"
                 className="group flex items-center justify-center gap-2 bg-[#fa5631] text-white font-bold text-lg px-8 py-4 rounded-full transition-all hover:scale-105 hover:shadow-[0_0_30px_rgba(250,86,49,0.3)]"
               >
-                Request an Invite
+                SignUp{" "}
                 <Icons.ArrowRight className="group-hover:translate-x-1 transition-transform" />
               </Link>
-              <a
-                href="#how-it-works"
-                className="flex items-center justify-center px-8 py-4 rounded-full bg-white/5 text-white font-bold text-lg border border-white/10 hover:bg-white/10 transition-colors"
-              >
-                See how it works
-              </a>
             </div>
           </div>
 
-          {/* Hero Visual (CSS Abstract UI) */}
-          <div className="relative h-[400px] md:h-[500px] w-full flex justify-center items-center perspective-1000">
-            {/* Dashboard Mockup (Back) */}
-            <div className="absolute right-0 top-10 w-3/4 h-[350px] bg-[#111] rounded-2xl border border-white/10 shadow-2xl p-6 transform rotate-y-[-10deg] rotate-x-[5deg] translate-x-4 opacity-80 transition-transform duration-700 hover:rotate-y-0">
-              <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
-                <div className="w-24 h-4 bg-white/10 rounded-full" />
-                <div className="w-8 h-8 rounded-full bg-[#fa5631]/20 flex items-center justify-center">
-                  <div className="w-2 h-2 rounded-full bg-[#fa5631]" />
-                </div>
-              </div>
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="flex justify-between items-center p-3 rounded-lg bg-white/5"
-                  >
-                    <div className="flex gap-3 items-center">
-                      <div className="w-10 h-10 rounded bg-white/10" />
-                      <div className="space-y-2">
-                        <div className="w-20 h-2.5 bg-white/20 rounded" />
-                        <div className="w-12 h-2 bg-white/10 rounded" />
-                      </div>
-                    </div>
-                    <div className="w-16 h-4 bg-[#fa5631]/50 rounded" />
+          <div className="relative h-[450px] md:h-[550px] w-full flex justify-center items-center perspective-1200">
+            {/* Dashboard Panel (Rolls out after phone) */}
+            <div className="absolute right-0 top-10 w-4/5 animate-dash-rollout z-0">
+              <div className="w-full h-[380px] bg-[#111] rounded-2xl border border-white/10 shadow-2xl overflow-hidden transform rotate-y-[-12deg] rotate-x-[6deg] translate-x-4">
+                <div className="bg-[#151515] px-6 py-4 border-b border-white/5 flex justify-between items-center relative z-20">
+                  <div className="flex gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-white/10" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-white/10" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-white/10" />
                   </div>
-                ))}
+                  <div className="text-[10px] font-bold text-white/40 uppercase tracking-tighter">
+                    Live Order Feed
+                  </div>
+                </div>
+
+                <div className="relative h-full pt-4 px-6 overflow-hidden">
+                  <div className="flex flex-col gap-3 animate-infinite-scroll">
+                    {[
+                      ...dashboardItems,
+                      ...dashboardItems,
+                      ...dashboardItems,
+                    ].map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="flex justify-between items-center p-3.5 rounded-xl bg-white/5 border border-white-[0.02] flex-shrink-0"
+                      >
+                        <div className="flex gap-3 items-center">
+                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-white/10 to-transparent" />
+                          <div className="space-y-1.5">
+                            <div className="w-24 h-2.5 bg-white/20 rounded" />
+                            <div className="w-12 h-2 bg-white/10 rounded" />
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[#fa5631] text-[10px] font-black">
+                            {item.price}
+                          </div>
+                          <div className="text-[8px] text-white/30 uppercase">
+                            {item.time}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#111] to-transparent z-10 pointer-events-none" />
+                </div>
               </div>
             </div>
 
-            {/* Mobile Mockup (Front) */}
-            <div className="absolute left-4 sm:left-10 bottom-0 w-[240px] h-[480px] bg-black border-[6px] border-[#222] rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden transform rotate-y-[15deg] rotate-x-[5deg] transition-transform duration-700 hover:-translate-y-4">
-              <div className="absolute top-0 inset-x-0 h-6 bg-black z-20 flex justify-center">
-                <div className="w-20 h-4 bg-[#222] rounded-b-xl" />
-              </div>
-              <div className="w-full h-full bg-[#0a0a0a] relative p-4 pt-10">
-                <div className="w-16 h-16 bg-[#fa5631] rounded-full mx-auto mb-4 flex items-center justify-center shadow-[0_0_20px_rgba(250,86,49,0.4)]">
-                  <span className="text-black font-black text-2xl">J</span>
+            {/* Phone Mockup (Bounces in first) */}
+            <div className="absolute left-6 sm:left-12 bottom-0 animate-phone-bounce z-10">
+              <div className="w-[260px] h-[520px] bg-black border-[8px] border-[#222] rounded-[3rem] shadow-[0_30px_60px_rgba(0,0,0,0.8)] overflow-hidden transform rotate-y-[15deg] rotate-x-[5deg] transition-transform duration-700 hover:rotate-y-[5deg]">
+                <div className="absolute top-0 inset-x-0 h-8 bg-black z-30 flex justify-center items-end pb-1.5">
+                  <div className="w-24 h-5 bg-[#111] rounded-full" />
                 </div>
-                <div className="w-32 h-4 bg-white/90 rounded mx-auto mb-6" />
-                <div className="space-y-3">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div
-                      key={i}
-                      className="flex justify-between items-end bg-[#111] p-3 rounded-xl border border-white/5"
-                    >
-                      <div className="space-y-2">
-                        <div className="w-24 h-3 bg-white/60 rounded" />
-                        <div className="w-16 h-2 bg-white/30 rounded" />
+                <div className="w-full h-full bg-[#0a0a0a] relative p-5 pt-14 flex flex-col">
+                  <div className="w-14 h-14 bg-[#fa5631] rounded-full mx-auto mb-6 flex items-center justify-center shadow-[0_0_20px_rgba(250,86,49,0.4)]">
+                    <span className="text-black font-black text-xl">S</span>
+                  </div>
+                  <div className="w-3/4 h-5 bg-white/10 rounded-full mx-auto mb-10" />
+                  <div className="space-y-4 flex-grow">
+                    {[1, 2, 3].map((i) => (
+                      <div
+                        key={i}
+                        className="bg-white/5 p-4 rounded-2xl border border-white/5 flex justify-between items-center"
+                      >
+                        <div className="space-y-2">
+                          <div className="w-20 h-2 bg-white/20 rounded" />
+                          <div className="w-12 h-1.5 bg-white/10 rounded" />
+                        </div>
+                        <div className="w-8 h-8 rounded-full border border-[#fa5631]/30 text-[#fa5631] flex items-center justify-center text-lg">
+                          +
+                        </div>
                       </div>
-                      <div className="w-8 h-8 rounded-full border border-[#fa5631]/50 text-[#fa5631] flex items-center justify-center text-lg leading-none pb-1">
-                        +
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="absolute bottom-4 left-4 right-4 bg-[#fa5631] text-black text-center py-3 font-bold rounded-xl">
-                  View Cart
+                    ))}
+                  </div>
+                  <div className="mt-auto bg-[#fa5631] text-black text-center py-4 font-black rounded-2xl text-xs uppercase tracking-widest shadow-lg">
+                    Check Out
+                  </div>
                 </div>
               </div>
             </div>
@@ -349,16 +406,16 @@ const Landing = () => {
       </section>
 
       {/* --- Social Proof Strip --- */}
-      <section className="border-y border-white/5 bg-[#050505] py-8 overflow-hidden relative">
+      <ScrollReveal
+        effect="fade"
+        className="border-y border-white/5 bg-[#050505] py-8 overflow-hidden relative"
+      >
         <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-[#050505] to-transparent z-10" />
         <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-[#050505] to-transparent z-10" />
-
         <p className="text-center text-xs font-bold text-white/30 uppercase tracking-widest mb-6">
           Trusted by Nigeria's most ambitious kitchens
         </p>
-
         <div className="flex w-full overflow-hidden">
-          {/* CSS Marquee Setup */}
           <div className="flex animate-[marquee_20s_linear_infinite] whitespace-nowrap items-center justify-around min-w-full gap-16 px-8">
             {[
               "Iya Basira's",
@@ -394,11 +451,11 @@ const Landing = () => {
             ))}
           </div>
         </div>
-      </section>
+      </ScrollReveal>
 
       {/* --- Features Grid --- */}
       <section id="features" className="py-32 px-6 max-w-7xl mx-auto">
-        <div className="text-center mb-20">
+        <ScrollReveal className="text-center mb-20">
           <h2 className="font-display text-4xl md:text-5xl font-black mb-4">
             Everything you need to scale.
           </h2>
@@ -406,69 +463,74 @@ const Landing = () => {
             Stop paying 30% commissions to delivery apps. Own your customer
             relationship end-to-end.
           </p>
-        </div>
+        </ScrollReveal>
 
         <div className="grid md:grid-cols-2 gap-6">
-          {/* Card 1 */}
-          <div className="group bg-[#111] border border-white/5 rounded-[2rem] p-10 hover:border-[#fa5631]/30 transition-all duration-500 relative overflow-hidden">
-            <div className="absolute right-0 top-0 w-64 h-64 bg-[#fa5631]/5 blur-[80px] rounded-full group-hover:bg-[#fa5631]/10 transition-colors" />
-            <div className="w-14 h-14 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center text-[#fa5631] mb-8 group-hover:scale-110 transition-transform">
-              <Icons.QR />
+          <ScrollReveal delay={0}>
+            <div className="group bg-[#111] border border-white/5 rounded-[2rem] p-10 hover:border-[#fa5631]/30 transition-all duration-500 relative overflow-hidden">
+              <div className="absolute right-0 top-0 w-64 h-64 bg-[#fa5631]/5 blur-[80px] rounded-full group-hover:bg-[#fa5631]/10 transition-colors" />
+              <div className="w-14 h-14 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center text-[#fa5631] mb-8 group-hover:scale-110 transition-transform">
+                <Icons.QR />
+              </div>
+              <h3 className="text-2xl font-bold mb-3 font-display">
+                QR Code Ordering
+              </h3>
+              <p className="text-white/50 leading-relaxed">
+                Customers scan the code on their table, browse the menu, and
+                order directly from their phones. No app downloads required.
+              </p>
             </div>
-            <h3 className="text-2xl font-bold mb-3 font-display">
-              QR Code Ordering
-            </h3>
-            <p className="text-white/50 leading-relaxed">
-              Customers scan the code on their table, browse the menu, and order
-              directly from their phones. No app downloads required.
-            </p>
-          </div>
+          </ScrollReveal>
 
-          {/* Card 2 */}
-          <div className="group bg-[#111] border border-white/5 rounded-[2rem] p-10 hover:border-[#fa5631]/30 transition-all duration-500 relative overflow-hidden">
-            <div className="absolute right-0 top-0 w-64 h-64 bg-[#fa5631]/5 blur-[80px] rounded-full group-hover:bg-[#fa5631]/10 transition-colors" />
-            <div className="w-14 h-14 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center text-[#fa5631] mb-8 group-hover:scale-110 transition-transform">
-              <Icons.Dashboard />
+          <ScrollReveal delay={150}>
+            <div className="group bg-[#111] border border-white/5 rounded-[2rem] p-10 hover:border-[#fa5631]/30 transition-all duration-500 relative overflow-hidden">
+              <div className="absolute right-0 top-0 w-64 h-64 bg-[#fa5631]/5 blur-[80px] rounded-full group-hover:bg-[#fa5631]/10 transition-colors" />
+              <div className="w-14 h-14 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center text-[#fa5631] mb-8 group-hover:scale-110 transition-transform">
+                <Icons.Dashboard />
+              </div>
+              <h3 className="text-2xl font-bold mb-3 font-display">
+                Real-Time Dashboard
+              </h3>
+              <p className="text-white/50 leading-relaxed">
+                Hear that ping? See orders the second they are placed. Manage
+                kitchen flow, print receipts, and track fulfillment in real
+                time.
+              </p>
             </div>
-            <h3 className="text-2xl font-bold mb-3 font-display">
-              Real-Time Dashboard
-            </h3>
-            <p className="text-white/50 leading-relaxed">
-              Hear that ping? See orders the second they are placed. Manage
-              kitchen flow, print receipts, and track fulfillment in real time.
-            </p>
-          </div>
+          </ScrollReveal>
 
-          {/* Card 3 */}
-          <div className="group bg-[#111] border border-white/5 rounded-[2rem] p-10 hover:border-[#fa5631]/30 transition-all duration-500 relative overflow-hidden">
-            <div className="absolute right-0 top-0 w-64 h-64 bg-[#fa5631]/5 blur-[80px] rounded-full group-hover:bg-[#fa5631]/10 transition-colors" />
-            <div className="w-14 h-14 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center text-[#fa5631] mb-8 group-hover:scale-110 transition-transform">
-              <Icons.Palette />
+          <ScrollReveal delay={0}>
+            <div className="group bg-[#111] border border-white/5 rounded-[2rem] p-10 hover:border-[#fa5631]/30 transition-all duration-500 relative overflow-hidden">
+              <div className="absolute right-0 top-0 w-64 h-64 bg-[#fa5631]/5 blur-[80px] rounded-full group-hover:bg-[#fa5631]/10 transition-colors" />
+              <div className="w-14 h-14 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center text-[#fa5631] mb-8 group-hover:scale-110 transition-transform">
+                <Icons.Palette />
+              </div>
+              <h3 className="text-2xl font-bold mb-3 font-display">
+                Custom Brand Page
+              </h3>
+              <p className="text-white/50 leading-relaxed">
+                Your colors, your logo, your vibe. Stand out from the generic
+                aggregators with a storefront that actually looks like your
+                restaurant.
+              </p>
             </div>
-            <h3 className="text-2xl font-bold mb-3 font-display">
-              Custom Brand Page
-            </h3>
-            <p className="text-white/50 leading-relaxed">
-              Your colors, your logo, your vibe. Stand out from the generic
-              aggregators with a storefront that actually looks like your
-              restaurant.
-            </p>
-          </div>
+          </ScrollReveal>
 
-          {/* Card 4 */}
-          <div className="group bg-[#111] border border-white/5 rounded-[2rem] p-10 hover:border-[#fa5631]/30 transition-all duration-500 relative overflow-hidden">
-            <div className="absolute right-0 top-0 w-64 h-64 bg-[#fa5631]/5 blur-[80px] rounded-full group-hover:bg-[#fa5631]/10 transition-colors" />
-            <div className="w-14 h-14 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center text-[#fa5631] mb-8 group-hover:scale-110 transition-transform">
-              <Icons.Chart />
+          <ScrollReveal delay={150}>
+            <div className="group bg-[#111] border border-white/5 rounded-[2rem] p-10 hover:border-[#fa5631]/30 transition-all duration-500 relative overflow-hidden">
+              <div className="absolute right-0 top-0 w-64 h-64 bg-[#fa5631]/5 blur-[80px] rounded-full group-hover:bg-[#fa5631]/10 transition-colors" />
+              <div className="w-14 h-14 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center text-[#fa5631] mb-8 group-hover:scale-110 transition-transform">
+                <Icons.Chart />
+              </div>
+              <h3 className="text-2xl font-bold mb-3 font-display">
+                Actionable Analytics
+              </h3>
+              <p className="text-white/50 leading-relaxed">
+                Know your peak hours, your top-selling items, and daily revenue
+                at a glance. Data-driven decisions for your kitchen.
+              </p>
             </div>
-            <h3 className="text-2xl font-bold mb-3 font-display">
-              Actionable Analytics
-            </h3>
-            <p className="text-white/50 leading-relaxed">
-              Know your peak hours, your top-selling items, and daily revenue at
-              a glance. Data-driven decisions for your kitchen.
-            </p>
-          </div>
+          </ScrollReveal>
         </div>
       </section>
 
@@ -478,17 +540,20 @@ const Landing = () => {
         className="py-24 bg-[#050505] border-y border-white/5 px-6"
       >
         <div className="max-w-7xl mx-auto">
-          <h2 className="font-display text-3xl md:text-4xl font-black mb-16 text-center">
-            From signup to first order in minutes.
-          </h2>
+          <ScrollReveal>
+            <h2 className="font-display text-3xl md:text-4xl font-black mb-16 text-center">
+              From signup to first order in minutes.
+            </h2>
+          </ScrollReveal>
 
           <div className="flex flex-col md:flex-row justify-between gap-10 relative">
-            {/* Connecting Line (Desktop) */}
             <div className="hidden md:block absolute top-10 left-[10%] right-[10%] h-0.5 bg-white/10 z-0" />
 
-            {/* Step 1 */}
-            <div className="flex-1 relative z-10 flex flex-col items-center text-center group">
-              <div className="w-20 h-20 bg-black border-2 border-white/10 rounded-full flex items-center justify-center text-2xl font-black text-white/40 mb-6 group-hover:border-[#fa5631] group-hover:text-[#fa5631] transition-colors bg-[#050505]">
+            <ScrollReveal
+              delay={0}
+              className="flex-1 relative z-10 flex flex-col items-center text-center group"
+            >
+              <div className="w-20 h-20 bg-[#050505] border-2 border-white/10 rounded-full flex items-center justify-center text-2xl font-black text-white/40 mb-6 group-hover:border-[#fa5631] group-hover:text-[#fa5631] transition-colors">
                 1
               </div>
               <h4 className="text-xl font-bold mb-2">Get Your Invite</h4>
@@ -496,11 +561,13 @@ const Landing = () => {
                 Sign up for beta access and receive your unique restaurant setup
                 code.
               </p>
-            </div>
+            </ScrollReveal>
 
-            {/* Step 2 */}
-            <div className="flex-1 relative z-10 flex flex-col items-center text-center group">
-              <div className="w-20 h-20 bg-black border-2 border-[#fa5631] rounded-full flex items-center justify-center text-2xl font-black text-[#fa5631] mb-6 shadow-[0_0_30px_rgba(250,86,49,0.2)] bg-[#050505]">
+            <ScrollReveal
+              delay={200}
+              className="flex-1 relative z-10 flex flex-col items-center text-center group"
+            >
+              <div className="w-20 h-20 bg-[#050505] border-2 border-[#fa5631] rounded-full flex items-center justify-center text-2xl font-black text-[#fa5631] mb-6 shadow-[0_0_30px_rgba(250,86,49,0.2)]">
                 2
               </div>
               <h4 className="text-xl font-bold mb-2">Set Up Your Brand</h4>
@@ -508,11 +575,13 @@ const Landing = () => {
                 Add your logo, pick your brand colors, and upload your menu
                 items instantly.
               </p>
-            </div>
+            </ScrollReveal>
 
-            {/* Step 3 */}
-            <div className="flex-1 relative z-10 flex flex-col items-center text-center group">
-              <div className="w-20 h-20 bg-black border-2 border-white/10 rounded-full flex items-center justify-center text-2xl font-black text-white/40 mb-6 group-hover:border-[#fa5631] group-hover:text-[#fa5631] transition-colors bg-[#050505]">
+            <ScrollReveal
+              delay={400}
+              className="flex-1 relative z-10 flex flex-col items-center text-center group"
+            >
+              <div className="w-20 h-20 bg-[#050505] border-2 border-white/10 rounded-full flex items-center justify-center text-2xl font-black text-white/40 mb-6 group-hover:border-[#fa5631] group-hover:text-[#fa5631] transition-colors">
                 3
               </div>
               <h4 className="text-xl font-bold mb-2">Take Orders</h4>
@@ -520,54 +589,57 @@ const Landing = () => {
                 Print your QR codes, place them on tables, and watch the
                 dashboard light up.
               </p>
-            </div>
+            </ScrollReveal>
           </div>
         </div>
       </section>
 
       {/* --- Testimonial --- */}
       <section className="py-32 px-6 max-w-4xl mx-auto text-center">
-        <div className="text-[#fa5631] text-6xl font-serif leading-none mb-6">
-          "
-        </div>
-        <h3 className="font-display text-3xl md:text-5xl font-bold leading-tight mb-8">
-          Since switching to SERVRR, our table turnover time dropped by half.
-          Customers love the seamless ordering. It just works.
-        </h3>
-        <div className="flex items-center justify-center gap-4">
-          <div className="w-12 h-12 bg-white/10 rounded-full border border-white/20" />
-          <div className="text-left">
-            <p className="font-bold text-white">Adeola O.</p>
-            <p className="text-xs text-white/50 uppercase tracking-wider">
-              Restaurant Owner, Lagos
-            </p>
+        <ScrollReveal effect="scale">
+          <div className="text-[#fa5631] text-6xl font-serif leading-none mb-6">
+            "
           </div>
-        </div>
+          <h3 className="font-display text-3xl md:text-5xl font-bold leading-tight mb-8">
+            Since switching to SERVRR, our table turnover time dropped by half.
+            Customers love the seamless ordering. It just works.
+          </h3>
+          <div className="flex items-center justify-center gap-4">
+            <div className="w-12 h-12 bg-white/10 rounded-full border border-white/20" />
+            <div className="text-left">
+              <p className="font-bold text-white">Adeola O.</p>
+              <p className="text-xs text-white/50 uppercase tracking-wider">
+                Restaurant Owner, Lagos
+              </p>
+            </div>
+          </div>
+        </ScrollReveal>
       </section>
 
       {/* --- Pricing Teaser --- */}
       <section id="pricing" className="px-6 mb-32 max-w-5xl mx-auto">
-        <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-white/10 rounded-[2rem] p-12 text-center relative overflow-hidden flex flex-col items-center justify-center">
-          <div className="absolute -top-24 -right-24 w-64 h-64 bg-[#fa5631]/20 blur-[100px] rounded-full pointer-events-none" />
-          <h2 className="font-display text-4xl font-black mb-4 relative z-10">
-            Zero upfront costs.
-          </h2>
-          <p className="text-xl text-white/60 mb-8 relative z-10 max-w-2xl">
-            Free during fisrt 7 days of trial. Simple, transparent
-            commission-based pricing only when you scale.
-          </p>
-          <Link
-            to="/billing"
-            className="inline-flex items-center gap-2 bg-white/5 text-[#fa5631] hover:bg-white/10 hover:text-[#fa5631]/90 font-bold px-8 py-3 rounded-full border border-[#fa5631]/30 relative z-10 transition-all duration-300"
-          >
-            View Pricing & Billing Dashboard <Icons.ArrowRight />
-          </Link>
-        </div>
+        <ScrollReveal effect="scale">
+          <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-white/10 rounded-[2rem] p-12 text-center relative overflow-hidden flex flex-col items-center justify-center">
+            <div className="absolute -top-24 -right-24 w-64 h-64 bg-[#fa5631]/20 blur-[100px] rounded-full pointer-events-none" />
+            <h2 className="font-display text-4xl font-black mb-4 relative z-10">
+              Zero upfront costs.
+            </h2>
+            <p className="text-xl text-white/60 mb-8 relative z-10 max-w-2xl">
+              Free during first 7 days of trial. Simple, transparent
+              commission-based pricing only when you scale.
+            </p>
+            <Link
+              to="/billing"
+              className="inline-flex items-center gap-2 bg-white/5 text-[#fa5631] hover:bg-white/10 hover:text-[#fa5631]/90 font-bold px-8 py-3 rounded-full border border-[#fa5631]/30 relative z-10 transition-all duration-300"
+            >
+              View Pricing & Billing Dashboard <Icons.ArrowRight />
+            </Link>
+          </div>
+        </ScrollReveal>
       </section>
 
       {/* --- Final CTA --- */}
       <section className="py-32 px-6 bg-[#fa5631] text-black text-center relative overflow-hidden">
-        {/* Subtle geometric pattern */}
         <div
           className="absolute inset-0 opacity-10"
           style={{
@@ -576,13 +648,12 @@ const Landing = () => {
             backgroundSize: "24px 24px",
           }}
         />
-
-        <div className="relative z-10 max-w-3xl mx-auto">
+        <ScrollReveal className="relative z-10 max-w-3xl mx-auto">
           <h2 className="font-display text-5xl md:text-7xl font-black mb-8 leading-tight">
             Ready to take your restaurant digital?
           </h2>
           <Link
-            to="/support"
+            to="/invite"
             className="inline-flex items-center gap-2 bg-black text-white font-black text-xl px-12 py-5 rounded-full hover:scale-105 hover:bg-[#111] transition-all shadow-2xl"
           >
             Request Invite Now <Icons.ArrowRight />
@@ -590,7 +661,7 @@ const Landing = () => {
           <p className="mt-6 text-black/60 font-bold uppercase tracking-widest text-sm">
             Setup takes 5 minutes.
           </p>
-        </div>
+        </ScrollReveal>
       </section>
 
       {/* --- Footer --- */}
@@ -610,31 +681,20 @@ const Landing = () => {
               Built for the future of African dining.
             </p>
           </div>
-
           <div className="flex flex-wrap justify-center gap-8 text-sm font-bold text-white/50">
-            <a
-              href="#features"
-              className="hover:text-[#fa5631] transition-colors"
-            >
-              Features
-            </a>
-            <a
-              href="/pricing"
-              className="hover:text-[#fa5631] transition-colors"
-            >
-              Pricing
-            </a>
-            <Link
-              to="/support"
-              className="hover:text-[#fa5631] transition-colors"
-            >
-              Support
-            </Link>
+            {["Features", "Pricing", "Support"].map((item) => (
+              <a
+                key={item}
+                href={`#${item.toLowerCase()}`}
+                className="hover:text-[#fa5631] transition-colors"
+              >
+                {item}
+              </a>
+            ))}
             <Link to="/login" className="hover:text-white transition-colors">
               Login
             </Link>
           </div>
-
           <div className="text-white/30 text-sm flex gap-4">
             <a
               href="https://x.com/servrr_"
@@ -653,16 +713,62 @@ const Landing = () => {
         </div>
       </footer>
 
-      {/* Tailwind specific custom animation setup */}
+      {/* --- Styles --- */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
+        /* Infinite Dashboard Scroll */
+        @keyframes verticalInfiniteScroll {
+          0% { transform: translateY(0); }
+          100% { transform: translateY(-50%); }
+        }
+        .animate-infinite-scroll {
+          animation: verticalInfiniteScroll 20s linear infinite;
+        }
+
+        /* Hero Text Reveal */
+        @keyframes revealUp {
+          from { opacity: 0; transform: translateY(30px); filter: blur(10px); }
+          to { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+        .animate-reveal-up {
+          animation: revealUp 1s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+        }
+
+        /* Typewriter Cursor */
+        @keyframes cursorBlink {
+          50% { opacity: 0; }
+        }
+        .animate-cursor-blink {
+          animation: cursorBlink 0.9s step-start infinite;
+        }
+
+        /* Premium Entrance Mechanics */
+        @keyframes bounceInPhone {
+          0% { transform: translateY(300px) rotateY(30deg); opacity: 0; }
+          60% { transform: translateY(-20px) rotateY(15deg); opacity: 1; }
+          100% { transform: translateY(0) rotateY(15deg); opacity: 1; }
+        }
+        @keyframes rollOutDash {
+          0% { transform: translateX(-60%) rotateY(-20deg) scale(0.8); opacity: 0; }
+          100% { transform: translateX(0) rotateY(-12deg) scale(1); opacity: 1; }
+        }
         @keyframes marquee {
           0% { transform: translateX(0%); }
           100% { transform: translateX(-100%); }
         }
-        .perspective-1000 {
-          perspective: 1000px;
+
+        .animate-phone-bounce {
+          opacity: 0;
+          animation: bounceInPhone 1.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s forwards;
+        }
+        .animate-dash-rollout {
+          opacity: 0;
+          animation: rollOutDash 1.2s cubic-bezier(0.16, 1, 0.3, 1) 1.2s forwards;
+        }
+
+        .perspective-1200 {
+          perspective: 1200px;
         }
       `,
         }}
