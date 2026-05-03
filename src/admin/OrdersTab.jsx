@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import orderImg from "../../assets/image/pg.png";
+import orderImg from "../../src/assets/image/order_image.png";
 import {
   collection,
   addDoc,
