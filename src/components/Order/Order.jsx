@@ -19,7 +19,7 @@ import { useListItemsAndTotalPrice } from "../../Context";
 import { useOrder } from "../../Context2";
 import { saveOrderId } from "../../utils/orderCache";
 import { useRestaurant } from "../../context/RestaurantContext";
-import { getTableSession } from "../../utils/tableToken";
+import { getTableSession, clearTableSession } from "../../utils/tableToken";
 import {
   getSession,
   saveSession,
@@ -207,7 +207,38 @@ const Order = () => {
   const accent = profile?.accentColor || "#fa5631";
   const paymentMode = profile?.paymentMode || "at_table";
 
-  const tableToken = getTableSession(restaurantId);
+  // ─── DEBUG BYPASS (desktop testing without QR token) ────────────────────────
+  const [debugBypass, setDebugBypass] = useState(false);
+  useEffect(() => {
+    // Expose global functions to enable/disable debug mode
+    window.__enableOrderDebug = () => {
+      sessionStorage.setItem("order_debug_bypass", "true");
+      console.log("✅ Order debug bypass enabled. Click the Order tab again.");
+      window.dispatchEvent(new Event("order-debug-update"));
+    };
+    window.__disableOrderDebug = () => {
+      sessionStorage.removeItem("order_debug_bypass");
+      console.log("❌ Order debug bypass disabled.");
+      window.dispatchEvent(new Event("order-debug-update"));
+    };
+    window.__isOrderDebugEnabled = () =>
+      sessionStorage.getItem("order_debug_bypass") === "true";
+
+    // Listen for custom event to force re-render
+    const handleDebugUpdate = () => {
+      setDebugBypass((prev) => !prev);
+    };
+    window.addEventListener("order-debug-update", handleDebugUpdate);
+    return () => {
+      window.removeEventListener("order-debug-update", handleDebugUpdate);
+    };
+  }, []);
+
+  const isDebugBypass = sessionStorage.getItem("order_debug_bypass") === "true";
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  //const tableToken = getTableSession(restaurantId);
+  const tableToken = getTableSession(restaurantId) || { table: "99" };
   const tableSessionLocal = getSession(restaurantId);
 
   const isNewTable =
@@ -322,10 +353,6 @@ const Order = () => {
   const loadPaystackScript = () => {
     return new Promise((resolve, reject) => {
       if (window.PaystackPop) return resolve();
-      // Remove any existing script to avoid conflicts (clean reload)
-      document
-        .querySelectorAll('script[src*="js.paystack.co"]')
-        .forEach((script) => script.remove());
       const script = document.createElement("script");
       script.src = "https://js.paystack.co/v1/inline.js";
       script.async = true;
@@ -357,7 +384,7 @@ const Order = () => {
     const sessionRef = await addDoc(
       collection(db, "restaurants", restaurantId, "tableSessions"),
       {
-        table: table,
+        table: isDebugBypass ? tableToken?.table || "99" : table,
         status: "open",
         openedAt: serverTimestamp(),
         totalBill: orderTotal,
@@ -369,7 +396,7 @@ const Order = () => {
     const localSession = {
       restaurantId,
       firestoreId: sessionRef.id,
-      table: table,
+      table: isDebugBypass ? tableToken?.table || "99" : table,
       status: "open",
       totalBill: orderTotal,
       paymentMode,
@@ -392,7 +419,7 @@ const Order = () => {
     const orderData = {
       customerName: name,
       email,
-      table: table,
+      table: isDebugBypass ? tableToken?.table || "99" : table,
       allergies,
       items,
       total: totalValue,
@@ -431,6 +458,7 @@ const Order = () => {
     setShowModal(true);
   };
 
+  // ─── Fixed handleSubmit with Paystack callback fix ──────────────────────────
   const handleSubmit = async () => {
     // Prevent multiple submissions
     if (submitting || isPayingRef.current) return;
@@ -438,7 +466,9 @@ const Order = () => {
     if (!email) return window.alert("Please enter your email.");
     if (!allergies)
       return window.alert("Please enter allergies or type 'none'.");
-    if (!table) return window.alert("Please enter your table number.");
+
+    const effectiveTable = isDebugBypass ? tableToken?.table || "99" : table;
+    if (!effectiveTable) return window.alert("Please enter your table number.");
     if (orderItem.length === 0)
       return window.alert("Please add items to your order first.");
 
@@ -450,7 +480,7 @@ const Order = () => {
       monthOrderCount >= 300
     ) {
       return window.alert(
-        "This restaurant has reached its 300 orders/month limit on the Starter plan. Please try again next month or ask the restaurant to upgrade their plan.",
+        "This restaurant has reached its 300 orders/month limit...",
       );
     }
 
@@ -469,6 +499,24 @@ const Order = () => {
       isPayingRef.current = true;
       setSubmitting(true);
       paymentSuccessRef.current = false;
+
+      // --- Load Paystack script and ensure no duplicates ---
+      const loadPaystackScript = () => {
+        return new Promise((resolve, reject) => {
+          if (window.PaystackPop) return resolve();
+          // Remove any existing script to avoid conflicts
+          document
+            .querySelectorAll('script[src*="js.paystack.co"]')
+            .forEach((script) => script.remove());
+          const script = document.createElement("script");
+          script.src = "https://js.paystack.co/v1/inline.js";
+          script.async = true;
+          script.onload = () => resolve();
+          script.onerror = () =>
+            reject(new Error("Failed to load Paystack SDK"));
+          document.body.appendChild(script);
+        });
+      };
 
       try {
         await loadPaystackScript();
@@ -493,6 +541,7 @@ const Order = () => {
         }
       }, 180000);
 
+      // --- Define callbacks as plain functions (no async) and then wrap them ---
       const onClosePlain = () => {
         clearTimeout(paymentTimeoutRef.current);
         if (!paymentSuccessRef.current) {
@@ -506,10 +555,11 @@ const Order = () => {
         clearTimeout(paymentTimeoutRef.current);
         paymentSuccessRef.current = true;
 
+        // Process payment asynchronously but don't return a Promise to Paystack
         (async () => {
           try {
             const verifyRes = await fetch(
-              `${import.meta.env.VITE_BACKEND_URL || "https://foodco-backend.onrender.com"}/verify-payment`,
+              "https://foodco-backend.onrender.com/verify-payment",
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -540,6 +590,18 @@ const Order = () => {
         })();
       };
 
+      // Double-check callbacks are functions
+      if (
+        typeof onClosePlain !== "function" ||
+        typeof callbackPlain !== "function"
+      ) {
+        setSubmitting(false);
+        isPayingRef.current = false;
+        setPaymentError("Internal error: callbacks not valid.");
+        return;
+      }
+
+      // Create the payment handler
       let handler;
       try {
         handler = window.PaystackPop.setup({
@@ -551,7 +613,7 @@ const Order = () => {
           subaccount: profile.paystackSubaccountCode,
           transaction_charge: 0,
           bearer: "subaccount",
-          metadata: { restaurantId, table: table, customerName: name },
+          metadata: { restaurantId, table: effectiveTable, customerName: name },
           onClose: onClosePlain,
           callback: callbackPlain,
         });
@@ -567,7 +629,7 @@ const Order = () => {
       return;
     }
 
-    // ---- Pay at table (offline) flow ----
+    // ---- Pay at table flow ----
     setSubmitting(true);
     try {
       await saveOrderToFirestore();
@@ -610,8 +672,8 @@ const Order = () => {
   const labelCls =
     "block text-white/40 text-xs font-semibold tracking-widest uppercase mb-2";
 
-  // ─── PRODUCTION TABLE TOKEN CHECK ───────────────────────────────────────────
-  if (!tableToken) {
+  // ─── TABLE TOKEN CHECK WITH DEBUG BYPASS ────────────────────────────────────
+  if (!tableToken && !isDebugBypass) {
     return (
       <section
         id="Order"
@@ -752,6 +814,9 @@ const Order = () => {
   }
 
   // ─── MAIN ORDER FORM ──────────────────────────────────────────────────────
+  const effectiveTableValue = isDebugBypass ? tableToken?.table || "99" : table;
+  const showTableReadOnly = isDebugBypass || !!tableToken?.table;
+
   return (
     <>
       {showModal && (
@@ -796,7 +861,7 @@ const Order = () => {
             <div>
               {/* Session status bar */}
               <div className="flex items-center gap-3 flex-wrap mb-5">
-                {tableToken?.table && (
+                {(tableToken?.table || isDebugBypass) && (
                   <div
                     className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border"
                     style={{
@@ -809,7 +874,8 @@ const Order = () => {
                       className="w-1.5 h-1.5 rounded-full animate-pulse"
                       style={{ background: accent }}
                     />
-                    Table {tableToken.table} · Verified ✓
+                    Table {effectiveTableValue} ·{" "}
+                    {isDebugBypass ? "DEBUG MODE ✓" : "Verified ✓"}
                   </div>
                 )}
                 {sessionTotal > 0 && (
@@ -876,10 +942,12 @@ const Order = () => {
                       type="number"
                       placeholder="e.g. 12"
                       className={inputCls}
-                      value={table}
-                      onChange={(e) => setTable(e.target.value)}
-                      readOnly={!!tableToken?.table}
-                      style={{ opacity: tableToken?.table ? 0.6 : 1 }}
+                      value={effectiveTableValue}
+                      onChange={(e) =>
+                        !showTableReadOnly && setTable(e.target.value)
+                      }
+                      readOnly={showTableReadOnly}
+                      style={{ opacity: showTableReadOnly ? 0.6 : 1 }}
                       onFocus={(e) =>
                         (e.target.style.borderColor = `${accent}99`)
                       }
