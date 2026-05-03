@@ -1,885 +1,1077 @@
-import React, { useState, useEffect, useRef } from "react";
-import orderImg from "../../src/assets/image/order_image.png";
+import React, { useEffect, useState, useRef } from "react";
 import {
   collection,
-  addDoc,
-  serverTimestamp,
-  doc,
-  updateDoc,
-  getDoc,
   onSnapshot,
+  updateDoc,
+  deleteDoc,
+  doc,
+  orderBy,
   query,
-  where,
-  getDocs,
-  Timestamp,
 } from "firebase/firestore";
-import { db } from "../../firebase/config";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useListItemsAndTotalPrice } from "../../Context";
-import { useOrder } from "../../Context2";
-import { saveOrderId } from "../../utils/orderCache";
-import { useRestaurant } from "../../context/RestaurantContext";
-import { getTableSession } from "../../utils/tableToken";
-import {
-  getSession,
-  saveSession,
-  updateSession,
-  clearSession,
-} from "../../utils/tableSession";
+import { useParams } from "react-router-dom";
+import { db } from "../firebase/config";
+import { useRestaurant } from "../context/RestaurantContext";
+import ReauthModal, { isReauthValid } from "../components/ReauthModal";
 
-// ─── Success Modal (unchanged, keep as is) ────────────────────────────────────
-const SuccessModal = ({
-  name,
-  orderId,
-  sessionId,
-  onClose,
-  onRequestBill,
-  accent,
-  showBillOption,
-}) => {
-  // ... (copy your existing SuccessModal code – no changes needed)
+const STATUS_CONFIG = {
+  pending: {
+    label: "Pending",
+    color: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+  },
+  in_progress: {
+    label: "In Progress",
+    color: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  },
+  ready: {
+    label: "Ready",
+    color: "bg-orange-500/15 text-orange-400 border-orange-500/30",
+  },
+  completed: {
+    label: "Completed",
+    color: "bg-green-500/15 text-green-400 border-green-500/30",
+  },
+};
+const NEXT_STATUS = {
+  pending: "in_progress",
+  in_progress: "ready",
+  ready: "completed",
+};
+const NEXT_LABEL = {
+  pending: "Mark In Progress",
+  in_progress: "Mark Ready",
+  ready: "Mark Completed",
 };
 
-// ─── Bill Requested Screen (unchanged) ───────────────────────────────────────
-const BillRequestedBanner = ({ accent, totalBill }) => {
-  // ... (copy your existing BillRequestedBanner)
+const SESSION_STATUS = {
+  open: {
+    label: "Open",
+    color: "bg-green-500/15 text-green-400 border-green-500/30",
+  },
+  awaiting_payment: {
+    label: "Bill Requested",
+    color: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+  },
+  paid: {
+    label: "Paid",
+    color: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  },
+  closed: {
+    label: "Closed",
+    color: "bg-white/5 text-white/30 border-white/10",
+  },
 };
 
-// ─── Order Component ──────────────────────────────────────────────────────────
-const Order = () => {
-  const { restaurantId } = useParams();
-  const { profile } = useRestaurant();
-  const accent = profile?.accentColor || "#fa5631";
-  const paymentMode = profile?.paymentMode || "at_table";
-
-  const tableToken = getTableSession(restaurantId);
-  const tableSessionLocal = getSession(restaurantId);
-
-  const isNewTable =
-    tableToken &&
-    tableSessionLocal &&
-    tableToken.table !== tableSessionLocal.table;
-  const activeSession = isNewTable ? null : tableSessionLocal;
-
-  const [searchParams] = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [allergies, setAllergies] = useState("");
-  const [table, setTable] = useState(
-    tableToken?.table ||
-      activeSession?.table ||
-      searchParams.get("table") ||
-      "",
-  );
-  const [showModal, setShowModal] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [requestingBill, setRequestingBill] = useState(false);
-  const [confirmedName, setConfirmedName] = useState("");
-  const [orderId, setOrderId] = useState(null);
-  const [sessionId, setSessionId] = useState(
-    activeSession?.firestoreId || null,
-  );
-  const [sessionTotal, setSessionTotal] = useState(
-    activeSession?.totalBill || 0,
-  );
-  const [billRequested, setBillRequested] = useState(
-    activeSession?.status === "awaiting_payment",
-  );
-  const [sessionStatus, setSessionStatus] = useState(
-    tableSessionLocal?.status || "open",
-  );
-  const [paymentError, setPaymentError] = useState(null);
-  const [visibleError, setVisibleError] = useState("");
-  const [monthOrderCount, setMonthOrderCount] = useState(null);
-  const paymentSuccessRef = useRef(false);
-  const paymentTimeoutRef = useRef(null);
-  const isPayingRef = useRef(false);
-
-  // (Keep all useEffect hooks exactly as in your original – just remove debug bypass ones)
-
-  // Pre-load month order count for Starter plan
-  useEffect(() => {
-    if (!restaurantId || profile?.plan !== "starter") return;
-    const now = new Date();
-    const startOfMonth = Timestamp.fromDate(
-      new Date(now.getFullYear(), now.getMonth(), 1),
-    );
-    getDocs(
-      query(
-        collection(db, "restaurants", restaurantId, "orders"),
-        where("createdAt", ">=", startOfMonth),
-      ),
-    )
-      .then((snap) => setMonthOrderCount(snap.size))
-      .catch(() => {});
-  }, [restaurantId, profile?.plan]);
-
-  // Reset session when new table scanned
-  useEffect(() => {
-    if ((!tableSessionLocal && tableToken) || isNewTable) {
-      setSessionStatus("open");
-      setSessionId(null);
-      setSessionTotal(0);
-      setBillRequested(false);
-    }
-  }, [tableSessionLocal, tableToken, isNewTable]);
-
-  // Live Firestore listener
-  useEffect(() => {
-    const sid = activeSession?.firestoreId || sessionId;
-    if (!sid || !restaurantId) return;
-    const unsub = onSnapshot(
-      doc(db, "restaurants", restaurantId, "tableSessions", sid),
-      (snap) => {
-        if (!snap.exists()) return;
-        const data = snap.data();
-        setSessionStatus(data.status);
-        setSessionTotal(data.totalBill || 0);
-        if (data.status === "awaiting_payment") setBillRequested(true);
-        if (data.status === "paid" || data.status === "closed") {
-          clearSession();
-          setBillRequested(false);
-          setSessionStatus(data.status);
-        }
-      },
-    );
-    return unsub;
-  }, [sessionId, restaurantId, activeSession]);
-
-  const navigate = useNavigate();
-  const { listItemsAndTotalPrice } = useListItemsAndTotalPrice();
-  const { orderItem, quantities, clearOrder } = useOrder();
-
-  const calculateTotal = () => {
-    let total = 0;
-    Object.entries(quantities).forEach(([, { price, qty }]) => {
-      total += parseFloat(price) * qty;
-    });
-    return total;
-  };
-  const totalValue = calculateTotal();
-  const totalPrice = totalValue.toLocaleString("en-NG", {
-    minimumFractionDigits: 2,
+const formatTime = (ts) => {
+  if (!ts) return "—";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" });
+};
+const formatDate = (ts) => {
+  if (!ts) return "—";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleDateString("en-NG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
   });
-  const totalCount = Object.values(quantities).reduce(
-    (s, { qty }) => s + qty,
-    0,
-  );
+};
+const getDateKey = (ts) => {
+  if (!ts) return "Unknown";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toISOString().split("T")[0];
+};
+const formatDateKey = (key) => {
+  if (key === "Unknown") return "Unknown Date";
+  const d = new Date(key);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString("en-NG", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+};
+const groupByDate = (orders) => {
+  const groups = {};
+  orders.forEach((o) => {
+    const key = getDateKey(o.createdAt);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(o);
+  });
+  return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+};
 
-  // Helper to load Paystack script (only needed for resumeTransaction)
-  const loadPaystackScript = () => {
-    return new Promise((resolve, reject) => {
-      if (window.PaystackPop) return resolve();
-      const script = document.createElement("script");
-      script.src = "https://js.paystack.co/v1/inline.js";
-      script.async = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Failed to load Paystack SDK"));
-      document.body.appendChild(script);
-    });
-  };
-
-  // Open or retrieve a Firestore table session (unchanged)
-  const getOrCreateSession = async (orderTotal) => {
-    if (tableSessionLocal?.firestoreId) {
-      const newTotal = (tableSessionLocal.totalBill || 0) + orderTotal;
-      await updateDoc(
-        doc(
-          db,
-          "restaurants",
-          restaurantId,
-          "tableSessions",
-          tableSessionLocal.firestoreId,
-        ),
-        {
-          totalBill: newTotal,
-          updatedAt: serverTimestamp(),
-        },
-      );
-      updateSession({ totalBill: newTotal });
-      setSessionTotal(newTotal);
-      return tableSessionLocal.firestoreId;
-    }
-    const sessionRef = await addDoc(
-      collection(db, "restaurants", restaurantId, "tableSessions"),
-      {
-        table,
-        status: "open",
-        openedAt: serverTimestamp(),
-        totalBill: orderTotal,
-        orderIds: [],
-        paymentMode,
-      },
-    );
-    const localSession = {
-      restaurantId,
-      firestoreId: sessionRef.id,
-      table,
-      status: "open",
-      totalBill: orderTotal,
-      paymentMode,
-    };
-    saveSession(localSession);
-    setSessionId(sessionRef.id);
-    setSessionTotal(orderTotal);
-    return sessionRef.id;
-  };
-
-  const saveOrderToFirestore = async (paymentRef = null) => {
-    const items = Object.entries(quantities).map(([name, { price, qty }]) => ({
-      name,
-      price: parseFloat(price),
-      qty,
-    }));
-    const sid = await getOrCreateSession(totalValue);
-    const orderData = {
-      customerName: name,
-      email,
-      table,
-      allergies,
-      items,
-      total: totalValue,
-      status: "pending",
-      createdAt: serverTimestamp(),
-      sessionId: sid,
-    };
-    if (paymentRef) {
-      orderData.paymentStatus = "paid";
-      orderData.paymentRef = paymentRef;
-    }
-    const docRef = await addDoc(
-      collection(db, "restaurants", restaurantId, "orders"),
-      orderData,
-    );
-    const sessionDoc = await getDoc(
-      doc(db, "restaurants", restaurantId, "tableSessions", sid),
-    );
-    const existingIds = sessionDoc.exists()
-      ? sessionDoc.data().orderIds || []
-      : [];
-    await updateDoc(
-      doc(db, "restaurants", restaurantId, "tableSessions", sid),
-      { orderIds: [...existingIds, docRef.id] },
-    );
-    saveOrderId(docRef.id);
-    setOrderId(docRef.id);
-    setConfirmedName(name);
-    setName("");
-    setEmail("");
-    setAllergies("");
-    clearOrder();
-    setShowModal(true);
-  };
-
-  // ─── BACKEND‑INITIATED PAYSTACK (reliable, no frontend subaccount exposure) ───
-  const handleSubmit = async () => {
-    setVisibleError("");
-    if (submitting || isPayingRef.current) return;
-    if (!name) return alert("Please enter your name.");
-    if (!email) return alert("Please enter your email.");
-    if (!allergies) return alert("Please enter allergies or type 'none'.");
-    if (!table) return alert("Please enter your table number.");
-    if (orderItem.length === 0)
-      return alert("Please add items to your order first.");
-
-    setPaymentError(null);
-
-    if (
-      profile?.plan === "starter" &&
-      monthOrderCount !== null &&
-      monthOrderCount >= 300
-    ) {
-      return alert("This restaurant has reached its 300 orders/month limit.");
-    }
-
-    if (paymentMode === "pay_online") {
-      if (!profile?.paystackSubaccountCode) {
-        setVisibleError("Online payment not configured for this restaurant.");
-        return;
-      }
-      const backendUrl =
-        import.meta.env.VITE_BACKEND_URL ||
-        "https://foodco-backend.onrender.com";
-
-      isPayingRef.current = true;
-      setSubmitting(true);
-      paymentSuccessRef.current = false;
-
-      try {
-        // 1. Call backend to initialize transaction
-        const initRes = await fetch(`${backendUrl}/initiate-payment`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email,
-            amount: totalValue,
-            subaccountCode: profile.paystackSubaccountCode,
-            metadata: { restaurantId, table, customerName: name },
-          }),
-        });
-        const initData = await initRes.json();
-        if (!initRes.ok || !initData.accessCode) {
-          throw new Error(initData.error || "Failed to initialize payment");
-        }
-
-        // 2. Load Paystack script
-        await loadPaystackScript();
-
-        // 3. Use resumeTransaction (more reliable than setup)
-        const popup = new window.PaystackPop();
-        popup.resumeTransaction(initData.accessCode, {
-          onSuccess: async () => {
-            clearTimeout(paymentTimeoutRef.current);
-            paymentSuccessRef.current = true;
-            try {
-              // 4. Verify payment (optional but safe)
-              const verifyRes = await fetch(`${backendUrl}/verify-payment`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ reference: initData.reference }),
-              });
-              const verifyData = await verifyRes.json();
-              if (!verifyData.success) {
-                setVisibleError(
-                  "Payment verification failed. Reference: " +
-                    initData.reference,
-                );
-                setSubmitting(false);
-                isPayingRef.current = false;
-                return;
-              }
-              await saveOrderToFirestore(initData.reference);
-            } catch (err) {
-              console.error(err);
-              setVisibleError(
-                "Payment succeeded but order save failed. Show reference to staff: " +
-                  initData.reference,
-              );
-            } finally {
-              setSubmitting(false);
-              isPayingRef.current = false;
-            }
-          },
-          onCancel: () => {
-            clearTimeout(paymentTimeoutRef.current);
-            setSubmitting(false);
-            isPayingRef.current = false;
-            setVisibleError("Payment was cancelled.");
-          },
-          onError: (err) => {
-            console.error("Paystack error:", err);
-            clearTimeout(paymentTimeoutRef.current);
-            setSubmitting(false);
-            isPayingRef.current = false;
-            setVisibleError(
-              "Payment error: " + (err?.message || "Unknown error"),
-            );
-          },
-        });
-      } catch (err) {
-        console.error("Init payment error:", err);
-        setVisibleError(err.message);
-        setSubmitting(false);
-        isPayingRef.current = false;
-      }
-      return;
-    }
-
-    // Pay at table (offline)
-    setSubmitting(true);
-    try {
-      await saveOrderToFirestore();
-    } catch (err) {
-      console.error(err);
-      alert("Something went wrong. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleRequestBill = async () => {
-    if (!sessionId) return;
-    setRequestingBill(true);
-    try {
-      await updateDoc(
-        doc(db, "restaurants", restaurantId, "tableSessions", sessionId),
-        {
-          status: "awaiting_payment",
-          billRequestedAt: serverTimestamp(),
-        },
-      );
-      updateSession({ status: "awaiting_payment" });
-      setBillRequested(true);
-      setShowModal(false);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setRequestingBill(false);
-    }
-  };
-
-  const handleModalClose = () => {
-    setShowModal(false);
-    if (orderId) navigate(`/${restaurantId}/track/${orderId}`);
-  };
-
-  const inputCls =
-    "w-full bg-[#1a1a1a] border border-white/10 text-white placeholder-white/25 text-sm px-4 py-3 focus:outline-none transition-colors";
-  const labelCls =
-    "block text-white/40 text-xs font-semibold tracking-widest uppercase mb-2";
-
-  // ─── PRODUCTION TOKEN CHECK (no debug bypass) ────────────────────────────────
-  if (!tableToken) {
-    return (
-      <section
-        id="Order"
-        className="bg-[#111111] py-28 relative overflow-hidden"
+// ── Toast ─────────────────────────────────────────────────────────────────────
+const Toast = ({ order, accent, onDismiss }) => {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    requestAnimationFrame(() => setVisible(true));
+    const t = setTimeout(() => {
+      setVisible(false);
+      setTimeout(onDismiss, 400);
+    }, 8000);
+    return () => clearTimeout(t);
+  }, []);
+  const itemCount = (order.items || []).reduce((s, i) => s + i.qty, 0);
+  return (
+    <div
+      className="flex items-start gap-3 w-full max-w-sm pointer-events-auto"
+      style={{
+        transform: visible ? "translateX(0)" : "translateX(110%)",
+        opacity: visible ? 1 : 0,
+        transition:
+          "transform 0.4s cubic-bezier(0.16,1,0.3,1), opacity 0.4s ease",
+      }}
+    >
+      <div
+        className="bg-[#111111] border shadow-2xl w-full overflow-hidden"
+        style={{
+          borderColor: `${accent}60`,
+          boxShadow: `0 8px 40px ${accent}20`,
+        }}
       >
-        <div className="max-w-7xl mx-auto px-6 lg:px-10 flex items-center justify-center min-h-[400px]">
-          <div className="text-center max-w-sm">
-            <div
-              className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 border"
-              style={{ background: `${accent}15`, borderColor: `${accent}30` }}
+        <div className="h-1 w-full" style={{ background: accent }} />
+        <div className="p-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
+                <span
+                  className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                  style={{ background: accent }}
+                />
+                <span
+                  className="relative inline-flex rounded-full h-2.5 w-2.5"
+                  style={{ background: accent }}
+                />
+              </span>
+              <p className="text-white font-bold text-sm">New Order!</p>
+            </div>
+            <button
+              onClick={() => {
+                setVisible(false);
+                setTimeout(onDismiss, 400);
+              }}
+              className="text-white/30 hover:text-white bg-transparent border-none cursor-pointer"
             >
               <svg
-                className="w-10 h-10"
-                style={{ color: accent }}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              >
-                <rect x="3" y="3" width="7" height="7" />
-                <rect x="14" y="3" width="7" height="7" />
-                <rect x="3" y="14" width="7" height="7" />
-                <rect x="14" y="14" width="3" height="3" />
-              </svg>
-            </div>
-            <h2 className="font-display text-2xl font-black text-white mb-3">
-              Scan the Table QR Code
-            </h2>
-            <p className="text-white/40 text-sm leading-relaxed mb-6">
-              To place an order, please scan the QR code on your table. This
-              confirms you're at the restaurant and links your order to the
-              correct table.
-            </p>
-            <div className="bg-[#1a1a1a] border border-white/5 p-4 text-white/20 text-xs leading-relaxed">
-              Already scanned? Your session may have expired. Scan the QR code
-              again to continue.
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  if (sessionStatus === "paid" || sessionStatus === "closed") {
-    const handleNewOrder = () => {
-      clearSession();
-      setSessionStatus("open");
-      setSessionId(null);
-      setSessionTotal(0);
-      setBillRequested(false);
-    };
-    return (
-      <section
-        id="Order"
-        className="bg-[#111111] py-28 relative overflow-hidden"
-      >
-        <div className="max-w-7xl mx-auto px-6 lg:px-10 flex items-center justify-center min-h-[400px]">
-          <div className="text-center max-w-sm">
-            <div
-              className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 border"
-              style={{ background: `${accent}20`, borderColor: `${accent}40` }}
-            >
-              <svg
-                className="w-10 h-10"
-                style={{ color: accent }}
+                className="w-4 h-4"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
               >
-                <path
-                  d="M20 6L9 17l-5-5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+                <path d="M18 6L6 18M6 6l12 12" />
               </svg>
-            </div>
-            <h2 className="font-display text-2xl font-black text-white mb-3">
-              {sessionStatus === "paid"
-                ? "Payment Confirmed! 🎉"
-                : "Session Closed"}
-            </h2>
-            <p className="text-white/40 text-sm leading-relaxed mb-2">
-              {sessionStatus === "paid"
-                ? "Your payment has been received. Thank you for dining with us!"
-                : "Your table session has been closed by staff."}
-            </p>
-            <p className="text-white/20 text-sm mb-8">
-              We hope to see you again soon. 🙏
-            </p>
-            {tableToken && (
-              <button
-                onClick={handleNewOrder}
-                className="inline-flex items-center gap-2 text-white font-semibold px-6 py-3 rounded-full border transition-all cursor-pointer bg-transparent"
-                style={{ borderColor: `${accent}60`, color: accent }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = accent;
-                  e.currentTarget.style.color = "white";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                  e.currentTarget.style.color = accent;
+            </button>
+          </div>
+          <p className="text-white/80 text-xs mb-1">
+            <span className="font-semibold text-white">
+              {order.customerName || "Guest"}
+            </span>{" "}
+            · Table {order.table}
+          </p>
+          <p className="text-white/40 text-xs mb-2">
+            {itemCount} item{itemCount !== 1 ? "s" : ""} · ₦
+            {Number(order.total || 0).toLocaleString()}
+          </p>
+          <div className="h-0.5 bg-white/10 overflow-hidden rounded-full">
+            <div
+              className="h-full rounded-full origin-left"
+              style={{
+                background: accent,
+                animation: "shrink 8s linear forwards",
+              }}
+            />
+          </div>
+        </div>
+      </div>
+      <style>{`@keyframes shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }`}</style>
+    </div>
+  );
+};
+
+// ── Simple Order Card (All Orders tab) ───────────────────────────────────────
+const SimpleOrderCard = ({
+  order,
+  isNew,
+  updateStatus,
+  deleteOrder,
+  accent,
+}) => {
+  const STATUS_NEXT_LABEL = {
+    pending: {
+      label: "Pending",
+      next: "Mark In Progress",
+      nextColor: "#3b82f6",
+      dotColor: "#eab308",
+    },
+    in_progress: {
+      label: "In Progress",
+      next: "Mark Ready",
+      nextColor: accent,
+      dotColor: "#3b82f6",
+    },
+    ready: {
+      label: "Ready",
+      next: "Mark Completed",
+      nextColor: "#22c55e",
+      dotColor: accent,
+    },
+    completed: {
+      label: "Completed",
+      next: null,
+      nextColor: null,
+      dotColor: "#22c55e",
+    },
+  };
+  const cfg = STATUS_NEXT_LABEL[order.status] || STATUS_NEXT_LABEL.pending;
+  const [expanded, setExpanded] = React.useState(false);
+
+  return (
+    <div
+      className={`bg-[#111111] border transition-all duration-300 ${isNew ? "shadow-lg" : "border-white/5"}`}
+      style={
+        isNew
+          ? { borderColor: accent, boxShadow: `0 4px 24px ${accent}1a` }
+          : {}
+      }
+    >
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Status dot */}
+        <div
+          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+          style={{ background: cfg.dotColor }}
+        />
+
+        {/* Main info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            {isNew && (
+              <span
+                className="text-[10px] font-black px-2 py-0.5 border animate-pulse"
+                style={{
+                  color: accent,
+                  background: `${accent}26`,
+                  borderColor: `${accent}4d`,
                 }}
               >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-                </svg>
-                Start a New Order
-              </button>
+                NEW
+              </span>
+            )}
+            <p className="text-white font-semibold text-sm">
+              {order.customerName || "Guest"}
+            </p>
+            <span className="text-white/20 text-xs">·</span>
+            <p className="text-white/40 text-xs">Table {order.table}</p>
+            <span className="text-white/20 text-xs">·</span>
+            <p className="text-white/30 text-xs">
+              {formatTime(order.createdAt)}
+            </p>
+            <span className="text-white/20 text-xs hidden sm:block">·</span>
+            <p
+              className="text-xs font-semibold"
+              style={{ color: cfg.dotColor }}
+            >
+              {cfg.label}
+            </p>
+          </div>
+          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+            <p className="text-white/30 text-xs">
+              {(order.items || []).length} item
+              {(order.items || []).length !== 1 ? "s" : ""}
+            </p>
+            <p className="font-bold text-xs" style={{ color: accent }}>
+              ₦{Number(order.total || 0).toLocaleString()}
+            </p>
+            {order.paymentStatus === "paid" && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 border bg-green-500/10 text-green-400 border-green-500/30">
+                Paid Online
+              </span>
             )}
           </div>
         </div>
-      </section>
-    );
-  }
 
-  if (billRequested) {
-    return (
-      <section
-        id="Order"
-        className="bg-[#111111] py-28 relative overflow-hidden"
-      >
-        <div className="max-w-7xl mx-auto px-6 lg:px-10">
-          <BillRequestedBanner accent={accent} totalBill={sessionTotal} />
-        </div>
-      </section>
-    );
-  }
-
-  // ─── MAIN ORDER FORM (same JSX as before, but with visibleError added) ───────
-  const showTableReadOnly = !!tableToken?.table;
-  return (
-    <>
-      {showModal && (
-        <SuccessModal
-          name={confirmedName}
-          orderId={orderId}
-          sessionId={sessionId}
-          accent={accent}
-          onClose={handleModalClose}
-          onRequestBill={handleRequestBill}
-          showBillOption={!!sessionId}
-        />
-      )}
-      <section
-        id="Order"
-        className="bg-[#111111] py-28 relative overflow-hidden"
-      >
-        {/* decorative elements */}
-        <div
-          className="absolute top-0 left-0 right-0 h-px"
-          style={{
-            background: `linear-gradient(to right, transparent, ${accent}4d, transparent)`,
-          }}
-        />
-        <div
-          className="absolute top-1/2 right-0 w-96 h-96 blur-3xl pointer-events-none"
-          style={{ background: `${accent}0a` }}
-        />
-        <div className="max-w-7xl mx-auto px-6 lg:px-10">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div className="hidden lg:flex items-center justify-center">
-              <img
-                src={orderImg}
-                alt="Order"
-                loading="lazy"
-                className="w-full max-w-md drop-shadow-2xl"
-                style={{ filter: `drop-shadow(0 20px 60px ${accent}26)` }}
+        {/* Actions */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Advance status button */}
+          {cfg.next && (
+            <button
+              onClick={() => updateStatus(order.id, NEXT_STATUS[order.status])}
+              className="text-white text-[10px] font-bold px-3 py-1.5 transition-all cursor-pointer border-none whitespace-nowrap"
+              style={{ background: cfg.nextColor }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+            >
+              {cfg.next}
+            </button>
+          )}
+          {order.status === "completed" && (
+            <span className="text-green-400 text-[10px] font-semibold px-3 py-1.5 bg-green-500/10 border border-green-500/20">
+              ✓ Done
+            </span>
+          )}
+          {/* Expand */}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white transition-all cursor-pointer bg-transparent border border-white/10 hover:border-white/30"
+          >
+            <svg
+              className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {/* Delete */}
+          <button
+            onClick={() => deleteOrder(order.id)}
+            className="w-7 h-7 flex items-center justify-center text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer bg-transparent border-none"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"
+                strokeLinecap="round"
               />
-            </div>
-            <div>
-              <div className="flex items-center gap-3 flex-wrap mb-5">
-                {tableToken?.table && (
-                  <div
-                    className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border"
-                    style={{
-                      background: `${accent}15`,
-                      borderColor: `${accent}30`,
-                      color: accent,
-                    }}
-                  >
-                    <div
-                      className="w-1.5 h-1.5 rounded-full animate-pulse"
-                      style={{ background: accent }}
-                    />
-                    Table {tableToken.table} · Verified ✓
-                  </div>
-                )}
-                {sessionTotal > 0 && (
-                  <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border border-white/10 text-white/40">
-                    Running bill:{" "}
-                    <span className="text-white font-bold">
-                      ₦{sessionTotal.toLocaleString()}
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div
-                className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase mb-5"
-                style={{ color: accent }}
-              >
-                <span className="w-8 h-px" style={{ background: accent }} />
-                {sessionTotal > 0 ? "Add more items" : "Place your order"}
-              </div>
-              <h2 className="font-display text-5xl lg:text-6xl font-black text-white leading-none mb-10">
-                <span className="italic" style={{ color: accent }}>
-                  Order
-                </span>{" "}
-                Now
-              </h2>
-              <div className="space-y-5">
-                {/* name, email, table, allergies fields – same as original */}
-                <div>
-                  <label className={labelCls}>Name</label>
-                  <input
-                    type="text"
-                    placeholder="Your full name"
-                    className={inputCls}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className={labelCls}>Email</label>
-                  <input
-                    type="email"
-                    placeholder="your@email.com"
-                    className={inputCls}
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={labelCls}>Table Number</label>
-                    <input
-                      type="number"
-                      placeholder="e.g. 12"
-                      className={inputCls}
-                      value={table}
-                      onChange={(e) => setTable(e.target.value)}
-                      readOnly={showTableReadOnly}
-                      style={{ opacity: showTableReadOnly ? 0.6 : 1 }}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Allergies</label>
-                    <input
-                      type="text"
-                      placeholder="None or specify"
-                      className={inputCls}
-                      value={allergies}
-                      onChange={(e) => setAllergies(e.target.value)}
-                    />
-                  </div>
-                </div>
+            </svg>
+          </button>
+        </div>
+      </div>
 
-                {/* order summary – same as original */}
-                <div>
-                  <label className={labelCls}>
-                    Your Order ({totalCount} item{totalCount !== 1 ? "s" : ""})
-                  </label>
-                  {totalCount > 0 ? (
-                    <div className="bg-[#1a1a1a] border border-white/10 p-4 space-y-2">
-                      <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                        <span className="text-white/20 text-[10px] font-semibold tracking-widest uppercase flex-1">
-                          Item
-                        </span>
-                        <span className="text-white/20 text-[10px] font-semibold tracking-widest uppercase w-20 text-center">
-                          Rate
-                        </span>
-                        <span className="text-white/20 text-[10px] font-semibold tracking-widests uppercase w-8 text-center">
-                          Qty
-                        </span>
-                        <span className="text-white/20 text-[10px] font-semibold tracking-widest uppercase w-20 text-right">
-                          Amount
-                        </span>
-                      </div>
-                      {Object.entries(quantities).map(
-                        ([itemName, { price, qty }]) => (
-                          <div
-                            key={itemName}
-                            className="flex items-center justify-between py-0.5"
-                          >
-                            <span className="text-white/70 text-xs flex-1 pr-2 truncate">
-                              {itemName}
-                            </span>
-                            <span className="text-white/35 text-xs w-20 text-center">
-                              ₦{parseFloat(price).toLocaleString()}
-                            </span>
-                            <span className="text-white/50 text-xs w-8 text-center">
-                              ×{qty}
-                            </span>
-                            <span className="text-white/60 text-xs w-20 text-right font-medium">
-                              ₦{(parseFloat(price) * qty).toLocaleString()}
-                            </span>
-                          </div>
-                        ),
-                      )}
-                      <div className="pt-2 mt-1 border-t border-white/10 flex justify-between">
-                        <span className="text-white/40 text-xs font-semibold uppercase tracking-wide">
-                          This order
-                        </span>
-                        <span
-                          className="font-bold text-sm"
-                          style={{ color: accent }}
-                        >
-                          ₦{totalPrice}
-                        </span>
-                      </div>
-                      {sessionTotal > 0 && (
-                        <div className="pt-1 flex justify-between">
-                          <span className="text-white/20 text-xs uppercase tracking-wide">
-                            Running bill after
-                          </span>
-                          <span className="text-white/40 text-xs font-bold">
-                            ₦{(sessionTotal + totalValue).toLocaleString()}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="bg-[#1a1a1a] border border-white/10 p-4 text-white/25 text-sm text-center">
-                      No items added yet — visit the menu above
-                    </div>
-                  )}
-                </div>
-
-                {totalCount === 0 && (
-                  <div
-                    className="p-4 text-sm border"
-                    style={{
-                      background: `${accent}1a`,
-                      borderColor: `${accent}33`,
-                      color: accent,
-                    }}
-                  >
-                    Scroll up to the <strong>Menu</strong> section to add items
-                    first.
-                  </div>
-                )}
-
-                {/* error displays */}
-                {paymentError && (
-                  <div className="p-3 border border-red-500/30 bg-red-500/10 text-red-400 text-sm">
-                    {paymentError}
-                  </div>
-                )}
-                {visibleError && (
-                  <div className="p-3 border border-orange-500/30 bg-orange-500/10 text-orange-400 text-sm">
-                    ⚠️ {visibleError}
-                  </div>
-                )}
-
-                {paymentMode === "pay_online" && totalCount > 0 && (
-                  <div
-                    className="p-3 border text-xs flex items-center gap-2"
-                    style={{
-                      borderColor: `${accent}33`,
-                      background: `${accent}0d`,
-                      color: accent,
-                    }}
-                  >
-                    <svg
-                      className="w-4 h-4 flex-shrink-0"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
-                      <line x1="1" y1="10" x2="23" y2="10" />
-                    </svg>
-                    You will be redirected to Paystack to complete payment
-                    before your order is confirmed.
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="w-full text-white font-bold py-4 rounded-full transition-all duration-300 tracking-wide cursor-pointer border-none disabled:opacity-70 flex items-center justify-center gap-3"
+      {/* Expanded items */}
+      {expanded && (
+        <div className="px-4 pb-3 border-t border-white/5 pt-3 space-y-1.5">
+          {(order.items || []).map((item, i) => (
+            <div key={i} className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-5 h-5 text-white text-[10px] font-black flex items-center justify-center"
                   style={{ background: accent }}
-                  onMouseEnter={(e) => {
-                    if (!submitting) e.currentTarget.style.opacity = "0.85";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
                 >
-                  {submitting ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Placing your order...
-                    </>
-                  ) : (
-                    <>
-                      {paymentMode === "pay_online"
-                        ? `Pay ₦${totalPrice}`
-                        : sessionTotal > 0
-                          ? "Add to Bill"
-                          : "Confirm Order"}
-                      {totalCount > 0 && (
-                        <span className="bg-white/20 text-xs font-black px-2 py-0.5 rounded-full">
-                          {totalCount} item{totalCount !== 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </button>
-
-                {sessionId && (
-                  <button
-                    type="button"
-                    onClick={handleRequestBill}
-                    disabled={requestingBill}
-                    className="w-full bg-transparent border border-white/10 hover:border-white/30 text-white/50 hover:text-white font-semibold py-3.5 rounded-full transition-all cursor-pointer flex items-center justify-center gap-2 text-sm disabled:opacity-40"
-                  >
-                    {requestingBill ? (
-                      <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <svg
-                          className="w-4 h-4"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" />
-                        </svg>
-                        Request the Bill · ₦{sessionTotal.toLocaleString()}
-                      </>
-                    )}
-                  </button>
-                )}
+                  {item.qty}
+                </span>
+                <span className="text-white/60 text-xs">{item.name}</span>
               </div>
+              <span className="text-white/30 text-xs">
+                ₦{(parseFloat(item.price) * item.qty).toLocaleString()}
+              </span>
             </div>
+          ))}
+          {order.allergies &&
+            order.allergies !== "none" &&
+            order.allergies !== "None" && (
+              <p className="text-yellow-400/60 text-xs pt-1">
+                ⚠ {order.allergies}
+              </p>
+            )}
+          {order.email && (
+            <p className="text-white/20 text-xs">{order.email}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Order Card ────────────────────────────────────────────────────────────────
+const OrderCard = ({
+  order,
+  isNew,
+  updateStatus,
+  deleteOrder,
+  accent,
+  compact,
+}) => {
+  const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
+  return (
+    <div
+      className={`bg-[#0f0f0f] border transition-all duration-500 ${isNew ? "shadow-lg" : "border-white/5"}`}
+      style={
+        isNew
+          ? { borderColor: accent, boxShadow: `0 4px 24px ${accent}1a` }
+          : {}
+      }
+    >
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+        <div className="flex items-center gap-2">
+          {isNew && (
+            <span
+              className="text-[10px] font-black px-2 py-0.5 border animate-pulse"
+              style={{
+                color: accent,
+                background: `${accent}26`,
+                borderColor: `${accent}4d`,
+              }}
+            >
+              NEW
+            </span>
+          )}
+          <div>
+            <p className="text-white font-bold text-sm">
+              {order.customerName || "Guest"}
+            </p>
+            <p className="text-white/30 text-xs">
+              {formatTime(order.createdAt)} · {formatDate(order.createdAt)}
+            </p>
           </div>
         </div>
-      </section>
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-xs font-semibold px-2 py-0.5 border ${cfg.color}`}
+          >
+            {cfg.label}
+          </span>
+          {order.paymentStatus === "paid" && (
+            <span className="text-xs font-semibold px-2 py-0.5 border bg-green-500/10 text-green-400 border-green-500/30">
+              Paid Online
+            </span>
+          )}
+          <button
+            onClick={() => deleteOrder(order.id)}
+            className="w-6 h-6 flex items-center justify-center text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer bg-transparent border-none"
+          >
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+      {!compact && (
+        <div className="px-4 py-3 space-y-1">
+          {(order.items || []).map((item, i) => (
+            <div key={i} className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-4 h-4 text-white text-[10px] font-black flex items-center justify-center"
+                  style={{ background: accent }}
+                >
+                  {item.qty}
+                </span>
+                <span className="text-white/60 text-xs">{item.name}</span>
+              </div>
+              <span className="text-white/30 text-xs">
+                ₦{(parseFloat(item.price) * item.qty).toLocaleString()}
+              </span>
+            </div>
+          ))}
+          <div className="flex justify-between pt-2 border-t border-white/5">
+            <span className="text-white/30 text-xs">Total</span>
+            <span className="font-bold text-xs" style={{ color: accent }}>
+              ₦{Number(order.total || 0).toLocaleString()}
+            </span>
+          </div>
+        </div>
+      )}
+      {order.status !== "completed" && (
+        <div className="px-4 py-2 border-t border-white/5 flex justify-end">
+          <button
+            onClick={() => updateStatus(order.id, NEXT_STATUS[order.status])}
+            className="text-xs font-semibold px-3 py-1.5 text-white transition-all cursor-pointer border-none flex items-center gap-1.5"
+            style={{ background: accent }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            {NEXT_LABEL[order.status]}
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Table Session Card ────────────────────────────────────────────────────────
+const SessionCard = ({ session, orders, accent, onClose, onMarkPaid }) => {
+  const [expanded, setExpanded] = useState(true);
+  const cfg = SESSION_STATUS[session.status] || SESSION_STATUS.open;
+  const sessionOrders = orders.filter((o) => session.orderIds?.includes(o.id));
+
+  return (
+    <div
+      className="bg-[#111111] border border-white/5 overflow-hidden"
+      style={
+        session.status === "awaiting_payment"
+          ? { borderColor: `${accent}60` }
+          : {}
+      }
+    >
+      {/* Session header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm"
+            style={{ background: `${accent}20`, color: accent }}
+          >
+            {session.table}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-white font-bold text-sm">
+                Table {session.table}
+              </p>
+              <span
+                className={`text-[10px] font-semibold px-2 py-0.5 border ${cfg.color}`}
+              >
+                {cfg.label}
+              </span>
+              {session.status === "awaiting_payment" && (
+                <span
+                  className="text-[10px] font-black px-2 py-0.5 animate-pulse"
+                  style={{ background: `${accent}26`, color: accent }}
+                >
+                  BILL REQUESTED
+                </span>
+              )}
+            </div>
+            <p className="text-white/30 text-xs">
+              {sessionOrders.length} order
+              {sessionOrders.length !== 1 ? "s" : ""} · Opened{" "}
+              {formatTime(session.openedAt)}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-white/30 text-[10px] uppercase tracking-wide">
+              Total Bill
+            </p>
+            <p className="font-black text-base" style={{ color: accent }}>
+              ₦{Number(session.totalBill || 0).toLocaleString()}
+            </p>
+          </div>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="w-8 h-8 flex items-center justify-center text-white/30 hover:text-white border border-white/10 hover:border-white/30 transition-all cursor-pointer bg-transparent"
+          >
+            <svg
+              className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Orders */}
+      {expanded && (
+        <div className="p-4 space-y-3">
+          {sessionOrders.length === 0 ? (
+            <p className="text-white/20 text-xs text-center py-4">
+              No orders linked yet.
+            </p>
+          ) : (
+            sessionOrders.map((order) => (
+              <div
+                key={order.id}
+                className="bg-[#0f0f0f] border border-white/5 p-3"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-white/60 text-xs font-semibold">
+                    {order.customerName || "Guest"}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[10px] font-semibold px-2 py-0.5 border ${(STATUS_CONFIG[order.status] || STATUS_CONFIG.pending).color}`}
+                    >
+                      {
+                        (STATUS_CONFIG[order.status] || STATUS_CONFIG.pending)
+                          .label
+                      }
+                    </span>
+                    {order.paymentStatus === "paid" && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 border bg-green-500/10 text-green-400 border-green-500/30">
+                        Paid
+                      </span>
+                    )}
+                    <span className="text-white/40 text-xs">
+                      {formatTime(order.createdAt)}
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-0.5">
+                  {(order.items || []).map((item, i) => (
+                    <div key={i} className="flex justify-between">
+                      <span className="text-white/40 text-xs">
+                        {item.qty}× {item.name}
+                      </span>
+                      <span className="text-white/30 text-xs">
+                        ₦{(parseFloat(item.price) * item.qty).toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-between pt-2 mt-2 border-t border-white/5">
+                  <span className="text-white/20 text-[10px]">Subtotal</span>
+                  <span className="text-white/50 text-xs font-bold">
+                    ₦{Number(order.total || 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+
+          {/* Actions */}
+          {session.status !== "closed" && session.status !== "paid" && (
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => onMarkPaid(session.id)}
+                className="flex-1 text-white text-xs font-bold py-2.5 transition-all cursor-pointer border-none flex items-center justify-center gap-2"
+                style={{ background: accent }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+              >
+                <svg
+                  className="w-3.5 h-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <path d="M20 6L9 17l-5-5" strokeLinecap="round" />
+                </svg>
+                Mark as Paid & Close
+              </button>
+              <button
+                onClick={() => onClose(session.id)}
+                className="px-4 text-white/40 hover:text-white text-xs font-semibold border border-white/10 hover:border-white/30 transition-all cursor-pointer bg-transparent"
+              >
+                Close Table
+              </button>
+            </div>
+          )}
+          {(session.status === "paid" || session.status === "closed") && (
+            <div className="text-center py-2 text-white/20 text-xs">
+              {session.status === "paid" ? "✓ Paid & Closed" : "Table Closed"}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Main OrdersTab ────────────────────────────────────────────────────────────
+const OrdersTab = () => {
+  const { restaurantId } = useParams();
+  const { profile } = useRestaurant();
+  const accent = profile?.accentColor || "#fa5631";
+
+  const [orders, setOrders] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("tables"); // "tables" | "orders"
+  const [filter, setFilter] = useState("pending");
+  const [newOrderIds, setNewOrderIds] = useState(new Set());
+  const [toasts, setToasts] = useState([]);
+  const [showReauth, setShowReauth] = useState(false);
+  const prevOrderIds = useRef(new Set());
+  const isFirstLoad = useRef(true);
+  const pendingAction = useRef(null);
+
+  const withReauth = (action) => {
+    if (isReauthValid()) {
+      action();
+    } else {
+      pendingAction.current = action;
+      setShowReauth(true);
+    }
+  };
+
+  const playSound = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [880, 1100].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.15);
+        gain.gain.linearRampToValueAtTime(
+          0.35,
+          ctx.currentTime + i * 0.15 + 0.05,
+        );
+        gain.gain.exponentialRampToValueAtTime(
+          0.001,
+          ctx.currentTime + i * 0.15 + 0.5,
+        );
+        osc.start(ctx.currentTime + i * 0.15);
+        osc.stop(ctx.currentTime + i * 0.15 + 0.5);
+      });
+    } catch (_) {}
+  };
+
+  // Listen to orders
+  useEffect(() => {
+    const q = query(
+      collection(db, "restaurants", restaurantId, "orders"),
+      orderBy("createdAt", "desc"),
+    );
+    return onSnapshot(q, (snap) => {
+      const incoming = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      if (!isFirstLoad.current) {
+        const newItems = incoming.filter(
+          (o) => !prevOrderIds.current.has(o.id),
+        );
+        if (newItems.length > 0) {
+          playSound();
+          setToasts((prev) => [
+            ...prev,
+            ...newItems.map((o) => ({ ...o, _toastId: o.id })),
+          ]);
+          setNewOrderIds(new Set(newItems.map((o) => o.id)));
+          setTimeout(() => setNewOrderIds(new Set()), 4000);
+        }
+      }
+      prevOrderIds.current = new Set(incoming.map((o) => o.id));
+      setOrders(incoming);
+      setLoading(false);
+      isFirstLoad.current = false;
+    });
+  }, [restaurantId]);
+
+  // Listen to table sessions
+  useEffect(() => {
+    const q = query(
+      collection(db, "restaurants", restaurantId, "tableSessions"),
+      orderBy("openedAt", "desc"),
+    );
+    return onSnapshot(q, (snap) => {
+      setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+  }, [restaurantId]);
+
+  const updateStatus = async (id, nextStatus) => {
+    await updateDoc(doc(db, "restaurants", restaurantId, "orders", id), {
+      status: nextStatus,
+    });
+  };
+  const deleteOrder = (id) => {
+    withReauth(async () => {
+      await deleteDoc(doc(db, "restaurants", restaurantId, "orders", id));
+    });
+  };
+  const sendReceipt = (session, sessionOrders) => {
+    const emails = [...new Set(sessionOrders.map((o) => o.email).filter(Boolean))];
+    if (!emails.length) return;
+    fetch("https://foodco-backend.onrender.com/send-receipt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        emails,
+        restaurantName: profile?.name || "The Restaurant",
+        table: session.table,
+        orders: sessionOrders.map((o) => ({
+          customerName: o.customerName || "Guest",
+          items: o.items || [],
+          total: o.total || 0,
+        })),
+        totalBill: session.totalBill || 0,
+      }),
+    }).catch(console.error);
+  };
+
+  const closeSession = async (sessionId) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    const sessionOrders = orders.filter((o) => session?.orderIds?.includes(o.id));
+    await updateDoc(
+      doc(db, "restaurants", restaurantId, "tableSessions", sessionId),
+      { status: "closed", closedAt: new Date() },
+    );
+    if (session) sendReceipt(session, sessionOrders);
+  };
+
+  const markSessionPaid = async (sessionId) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    const sessionOrders = orders.filter((o) => session?.orderIds?.includes(o.id));
+    await updateDoc(
+      doc(db, "restaurants", restaurantId, "tableSessions", sessionId),
+      { status: "paid", paidAt: new Date() },
+    );
+    if (session) sendReceipt(session, sessionOrders);
+  };
+
+  const activeSessions = sessions.filter(
+    (s) => s.status === "open" || s.status === "awaiting_payment",
+  );
+  const filtered =
+    filter === "all" ? orders : orders.filter((o) => o.status === filter);
+  const counts = {
+    all: orders.length,
+    pending: orders.filter((o) => o.status === "pending").length,
+    in_progress: orders.filter((o) => o.status === "in_progress").length,
+    ready: orders.filter((o) => o.status === "ready").length,
+    completed: orders.filter((o) => o.status === "completed").length,
+  };
+
+  if (loading)
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div
+          className="w-8 h-8 border-2 border-white/10 rounded-full animate-spin"
+          style={{ borderTopColor: accent }}
+        />
+      </div>
+    );
+
+  return (
+    <>
+      {showReauth && (
+        <ReauthModal
+          accent={accent}
+          onCancel={() => { setShowReauth(false); pendingAction.current = null; }}
+          onSuccess={() => { setShowReauth(false); pendingAction.current?.(); pendingAction.current = null; }}
+        />
+      )}
+      {/* Toast stack */}
+      <div
+        className="fixed bottom-6 right-6 z-[100] flex flex-col-reverse gap-3 pointer-events-none"
+        style={{ maxWidth: "360px", width: "calc(100vw - 3rem)" }}
+      >
+        {toasts.map((t) => (
+          <Toast
+            key={t._toastId}
+            order={t}
+            accent={accent}
+            onDismiss={() =>
+              setToasts((prev) => prev.filter((x) => x._toastId !== t._toastId))
+            }
+          />
+        ))}
+      </div>
+
+      <div>
+        {/* View toggle */}
+        <div className="flex items-center gap-2 mb-6">
+          {[
+            { key: "tables", label: `Tables`, badge: activeSessions.length },
+            { key: "orders", label: "All Orders", badge: null },
+          ].map(({ key, label, badge }) => (
+            <button
+              key={key}
+              onClick={() => setView(key)}
+              className="flex items-center gap-2 px-4 py-2 text-xs font-semibold border transition-all cursor-pointer"
+              style={
+                view === key
+                  ? { background: accent, borderColor: accent, color: "white" }
+                  : {
+                      background: "transparent",
+                      borderColor: "rgba(255,255,255,0.1)",
+                      color: "rgba(255,255,255,0.4)",
+                    }
+              }
+            >
+              {label}
+              {badge !== null && badge > 0 && (
+                <span
+                  className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+                  style={
+                    view === key
+                      ? { background: "rgba(255,255,255,0.2)", color: "white" }
+                      : {
+                          background: "rgba(255,255,255,0.1)",
+                          color: "rgba(255,255,255,0.5)",
+                        }
+                  }
+                >
+                  {badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Tables View ── */}
+        {view === "tables" && (
+          <div>
+            {activeSessions.length === 0 ? (
+              <div className="text-center py-24 text-white/20 text-sm">
+                No active tables right now. Orders will appear here when
+                customers scan their QR codes.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {activeSessions.map((session) => (
+                  <SessionCard
+                    key={session.id}
+                    session={session}
+                    orders={orders}
+                    accent={accent}
+                    onClose={closeSession}
+                    onMarkPaid={markSessionPaid}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Closed sessions today */}
+            {sessions.filter(
+              (s) => s.status === "paid" || s.status === "closed",
+            ).length > 0 && (
+              <div className="mt-10">
+                <p className="text-white/20 text-xs font-semibold tracking-widest uppercase mb-4">
+                  Closed Today
+                </p>
+                <div className="space-y-3">
+                  {sessions
+                    .filter((s) => s.status === "paid" || s.status === "closed")
+                    .map((session) => (
+                      <SessionCard
+                        key={session.id}
+                        session={session}
+                        orders={orders}
+                        accent={accent}
+                        onClose={closeSession}
+                        onMarkPaid={markSessionPaid}
+                      />
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Orders View ── */}
+        {view === "orders" && (
+          <div>
+            {/* Stats row */}
+            <div className="grid grid-cols-4 gap-3 mb-6">
+              {[
+                { label: "Pending", count: counts.pending, color: "#eab308" },
+                {
+                  label: "In Progress",
+                  count: counts.in_progress,
+                  color: "#3b82f6",
+                },
+                { label: "Ready", count: counts.ready, color: accent },
+                {
+                  label: "Completed",
+                  count: counts.completed,
+                  color: "#22c55e",
+                },
+              ].map(({ label, count, color }) => (
+                <div
+                  key={label}
+                  className="bg-[#111111] border border-white/5 px-4 py-3 text-center"
+                >
+                  <p className="font-black text-xl" style={{ color }}>
+                    {count}
+                  </p>
+                  <p className="text-white/30 text-[10px] mt-0.5">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            {orders.length === 0 ? (
+              <div className="text-center py-24 text-white/20 text-sm">
+                No orders yet
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {groupByDate(orders).map(([dateKey, dayOrders]) => {
+                  const dayRevenue = dayOrders
+                    .filter((o) => o.status === "completed")
+                    .reduce((sum, o) => sum + Number(o.total || 0), 0);
+                  const dayTotal = dayOrders.reduce(
+                    (sum, o) => sum + Number(o.total || 0),
+                    0,
+                  );
+                  return (
+                    <div key={dateKey}>
+                      {/* Date header */}
+                      <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/5">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-2 h-2 rounded-full"
+                            style={{ background: accent }}
+                          />
+                          <h3 className="text-white font-bold text-sm">
+                            {formatDateKey(dateKey)}
+                          </h3>
+                          <span className="text-white/20 text-xs border border-white/10 px-2 py-0.5">
+                            {dayOrders.length} order
+                            {dayOrders.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <p className="text-white/20 text-[10px] uppercase tracking-wide">
+                              Completed
+                            </p>
+                            <p
+                              className="font-black text-sm"
+                              style={{ color: accent }}
+                            >
+                              ₦{dayRevenue.toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-right hidden sm:block">
+                            <p className="text-white/20 text-[10px] uppercase tracking-wide">
+                              All Orders
+                            </p>
+                            <p className="text-white/40 font-bold text-sm">
+                              ₦{dayTotal.toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Orders for this day */}
+                      <div className="space-y-2">
+                        {dayOrders.map((order) => (
+                          <SimpleOrderCard
+                            key={order.id}
+                            order={order}
+                            isNew={newOrderIds.has(order.id)}
+                            updateStatus={updateStatus}
+                            deleteOrder={deleteOrder}
+                            accent={accent}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </>
   );
 };
 
-export default Order;
+export default OrdersTab;
