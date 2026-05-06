@@ -427,6 +427,7 @@ const Order = () => {
 
   // ─── BACKEND‑INITIATED PAYSTACK (reliable on mobile) ─────────────────────────
   const handleSubmit = async () => {
+    alert("Button clicked!");
     setVisibleError("");
     if (submitting || isPayingRef.current) return;
     if (!name) return window.alert("Please enter your name.");
