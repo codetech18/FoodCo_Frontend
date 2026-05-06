@@ -1,4 +1,4 @@
-# FOODco. — Food Ordering App
+# SERVRR. — Food Ordering App
 
 A modern dark-themed food ordering web app built with React, Vite, and Tailwind CSS.
 
