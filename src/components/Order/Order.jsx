@@ -210,7 +210,6 @@ const Order = () => {
   // ─── DEBUG BYPASS (desktop testing without QR token) ────────────────────────
   const [debugBypass, setDebugBypass] = useState(false);
   useEffect(() => {
-    // Expose global functions to enable/disable debug mode
     window.__enableOrderDebug = () => {
       sessionStorage.setItem("order_debug_bypass", "true");
       console.log("✅ Order debug bypass enabled. Click the Order tab again.");
@@ -224,7 +223,6 @@ const Order = () => {
     window.__isOrderDebugEnabled = () =>
       sessionStorage.getItem("order_debug_bypass") === "true";
 
-    // Listen for custom event to force re-render
     const handleDebugUpdate = () => {
       setDebugBypass((prev) => !prev);
     };
@@ -237,8 +235,23 @@ const Order = () => {
   const isDebugBypass = sessionStorage.getItem("order_debug_bypass") === "true";
   // ─────────────────────────────────────────────────────────────────────────────
 
-  //const tableToken = getTableSession(restaurantId);
-  const tableToken = getTableSession(restaurantId) || { table: "99" };
+  // Preload Paystack script ONCE to avoid await breaking popup on mobile
+  const [paystackReady, setPaystackReady] = useState(false);
+  useEffect(() => {
+    if (window.PaystackPop) {
+      setPaystackReady(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://js.paystack.co/v1/inline.js";
+    script.async = true;
+    script.onload = () => setPaystackReady(true);
+    script.onerror = () => console.error("Failed to load Paystack script");
+    document.body.appendChild(script);
+  }, []);
+
+  const tableToken =
+    getTableSession(restaurantId) || (isDebugBypass ? { table: "99" } : null);
   const tableSessionLocal = getSession(restaurantId);
 
   const isNewTable =
@@ -349,19 +362,6 @@ const Order = () => {
     0,
   );
 
-  // Helper to load Paystack script
-  const loadPaystackScript = () => {
-    return new Promise((resolve, reject) => {
-      if (window.PaystackPop) return resolve();
-      const script = document.createElement("script");
-      script.src = "https://js.paystack.co/v1/inline.js";
-      script.async = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Failed to load Paystack SDK"));
-      document.body.appendChild(script);
-    });
-  };
-
   // Open or retrieve a Firestore table session
   const getOrCreateSession = async (orderTotal) => {
     if (tableSessionLocal?.firestoreId) {
@@ -458,9 +458,8 @@ const Order = () => {
     setShowModal(true);
   };
 
-  // ─── Fixed handleSubmit with Paystack callback fix ──────────────────────────
+  // ─── FIXED handleSubmit (synchronous openIframe) ──────────────────────────
   const handleSubmit = async () => {
-    // Prevent multiple submissions
     if (submitting || isPayingRef.current) return;
     if (!name) return window.alert("Please enter your name.");
     if (!email) return window.alert("Please enter your email.");
@@ -495,39 +494,17 @@ const Order = () => {
           "Payment is not configured yet. Please contact the restaurant.",
         );
       }
+      // Ensure Paystack script is ready (should be, due to preloading)
+      if (!window.PaystackPop) {
+        setPaymentError(
+          "Payment system still loading. Please wait and try again.",
+        );
+        return;
+      }
 
       isPayingRef.current = true;
       setSubmitting(true);
       paymentSuccessRef.current = false;
-
-      // --- Load Paystack script and ensure no duplicates ---
-      const loadPaystackScript = () => {
-        return new Promise((resolve, reject) => {
-          if (window.PaystackPop) return resolve();
-          // Remove any existing script to avoid conflicts
-          document
-            .querySelectorAll('script[src*="js.paystack.co"]')
-            .forEach((script) => script.remove());
-          const script = document.createElement("script");
-          script.src = "https://js.paystack.co/v1/inline.js";
-          script.async = true;
-          script.onload = () => resolve();
-          script.onerror = () =>
-            reject(new Error("Failed to load Paystack SDK"));
-          document.body.appendChild(script);
-        });
-      };
-
-      try {
-        await loadPaystackScript();
-      } catch (err) {
-        setSubmitting(false);
-        isPayingRef.current = false;
-        setPaymentError(
-          "Payment system failed to load. Please refresh and try again.",
-        );
-        return;
-      }
 
       // Clear any existing timeout
       if (paymentTimeoutRef.current) clearTimeout(paymentTimeoutRef.current);
@@ -541,7 +518,7 @@ const Order = () => {
         }
       }, 180000);
 
-      // --- Define callbacks as plain functions (no async) and then wrap them ---
+      // Define callbacks (unchanged)
       const onClosePlain = () => {
         clearTimeout(paymentTimeoutRef.current);
         if (!paymentSuccessRef.current) {
@@ -554,8 +531,6 @@ const Order = () => {
       const callbackPlain = (response) => {
         clearTimeout(paymentTimeoutRef.current);
         paymentSuccessRef.current = true;
-
-        // Process payment asynchronously but don't return a Promise to Paystack
         (async () => {
           try {
             const verifyRes = await fetch(
@@ -590,18 +565,6 @@ const Order = () => {
         })();
       };
 
-      // Double-check callbacks are functions
-      if (
-        typeof onClosePlain !== "function" ||
-        typeof callbackPlain !== "function"
-      ) {
-        setSubmitting(false);
-        isPayingRef.current = false;
-        setPaymentError("Internal error: callbacks not valid.");
-        return;
-      }
-
-      // Create the payment handler
       let handler;
       try {
         handler = window.PaystackPop.setup({
@@ -625,6 +588,7 @@ const Order = () => {
         return;
       }
 
+      // CRITICAL: openIframe() must be called synchronously, without any await before it.
       handler.openIframe();
       return;
     }
