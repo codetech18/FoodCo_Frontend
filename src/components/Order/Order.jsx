@@ -15,11 +15,10 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/config";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useListItemsAndTotalPrice } from "../../Context";
 import { useOrder } from "../../Context2";
 import { saveOrderId } from "../../utils/orderCache";
 import { useRestaurant } from "../../context/RestaurantContext";
-import { getTableSession, clearTableSession } from "../../utils/tableToken";
+import { getTableSession } from "../../utils/tableToken";
 import {
   getSession,
   saveSession,
@@ -31,11 +30,8 @@ import {
 const SuccessModal = ({
   name,
   orderId,
-  sessionId,
   onClose,
-  onRequestBill,
   accent,
-  showBillOption,
 }) => {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
@@ -106,51 +102,24 @@ const SuccessModal = ({
           </div>
         </div>
 
-        <div className="h-px bg-white/5 mb-5" />
-
-        <div className="flex flex-col gap-3">
-          <button
-            onClick={onClose}
-            className="w-full text-white font-bold py-3.5 rounded-full transition-all cursor-pointer border-none flex items-center justify-center gap-2"
-            style={{ background: accent }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        <button
+          onClick={onClose}
+          className="w-full text-white font-bold py-3.5 rounded-full transition-all cursor-pointer border-none flex items-center justify-center gap-2"
+          style={{ background: accent }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        >
+          Track This Order
+          <svg
+            className="w-4 h-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
           >
-            Track This Order
-            <svg
-              className="w-4 h-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
-          </button>
-
-          {showBillOption && (
-            <>
-              <button
-                onClick={onRequestBill}
-                className="w-full bg-transparent border border-white/10 hover:border-white/30 text-white/60 hover:text-white font-semibold py-3.5 rounded-full transition-all cursor-pointer flex items-center justify-center gap-2 text-sm"
-              >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" />
-                </svg>
-                Request the Bill
-              </button>
-              <p className="text-white/20 text-xs text-center">
-                Want to order more? Just close this and add more items.
-              </p>
-            </>
-          )}
-        </div>
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+        </button>
       </div>
     </div>
   );
@@ -207,9 +176,11 @@ const Order = () => {
   const accent = profile?.accentColor || "#fa5631";
   const paymentMode = profile?.paymentMode || "at_table";
 
-  // ─── DEBUG BYPASS (desktop testing without QR token) ────────────────────────
+  // ─── DEBUG BYPASS (local desktop testing without QR token) ──────────────────
   const [debugBypass, setDebugBypass] = useState(false);
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
+
     window.__enableOrderDebug = () => {
       sessionStorage.setItem("order_debug_bypass", "true");
       console.log("✅ Order debug bypass enabled. Click the Order tab again.");
@@ -229,23 +200,23 @@ const Order = () => {
     window.addEventListener("order-debug-update", handleDebugUpdate);
     return () => {
       window.removeEventListener("order-debug-update", handleDebugUpdate);
+      delete window.__enableOrderDebug;
+      delete window.__disableOrderDebug;
+      delete window.__isOrderDebugEnabled;
     };
   }, []);
 
-  const isDebugBypass = sessionStorage.getItem("order_debug_bypass") === "true";
+  const isDebugBypass =
+    import.meta.env.DEV &&
+    sessionStorage.getItem("order_debug_bypass") === "true";
   // ─────────────────────────────────────────────────────────────────────────────
 
   // Preload Paystack script ONCE to avoid await breaking popup on mobile
-  const [paystackReady, setPaystackReady] = useState(false);
   useEffect(() => {
-    if (window.PaystackPop) {
-      setPaystackReady(true);
-      return;
-    }
+    if (window.PaystackPop) return;
     const script = document.createElement("script");
     script.src = "https://js.paystack.co/v1/inline.js";
     script.async = true;
-    script.onload = () => setPaystackReady(true);
     script.onerror = () => console.error("Failed to load Paystack script");
     document.body.appendChild(script);
   }, []);
@@ -259,6 +230,7 @@ const Order = () => {
     tableSessionLocal &&
     tableToken.table !== tableSessionLocal.table;
   const activeSession = isNewTable ? null : tableSessionLocal;
+  const activeSessionId = activeSession?.firestoreId || null;
 
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
@@ -272,7 +244,6 @@ const Order = () => {
   );
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [requestingBill, setRequestingBill] = useState(false);
   const [confirmedName, setConfirmedName] = useState("");
   const [orderId, setOrderId] = useState(null);
   const [sessionId, setSessionId] = useState(
@@ -312,6 +283,7 @@ const Order = () => {
 
   // Reset session state when a fresh QR scan is detected
   useEffect(() => {
+    if (isNewTable) clearSession();
     if ((!tableSessionLocal && tableToken) || isNewTable) {
       setSessionStatus("open");
       setSessionId(null);
@@ -322,7 +294,7 @@ const Order = () => {
 
   // Live listener on the Firestore session
   useEffect(() => {
-    const sid = activeSession?.firestoreId || sessionId;
+    const sid = activeSessionId || sessionId;
     if (!sid || !restaurantId) return;
     const unsub = onSnapshot(
       doc(db, "restaurants", restaurantId, "tableSessions", sid),
@@ -340,10 +312,9 @@ const Order = () => {
       },
     );
     return unsub;
-  }, [sessionId, restaurantId, activeSession]);
+  }, [sessionId, restaurantId, activeSessionId]);
 
   const navigate = useNavigate();
-  const { listItemsAndTotalPrice } = useListItemsAndTotalPrice();
   const { orderItem, quantities, clearOrder } = useOrder();
 
   const calculateTotal = () => {
@@ -364,21 +335,21 @@ const Order = () => {
 
   // Open or retrieve a Firestore table session
   const getOrCreateSession = async (orderTotal) => {
-    if (tableSessionLocal?.firestoreId) {
-      const newTotal = (tableSessionLocal.totalBill || 0) + orderTotal;
+    if (activeSession?.firestoreId) {
+      const newTotal = (activeSession.totalBill || 0) + orderTotal;
       await updateDoc(
         doc(
           db,
           "restaurants",
           restaurantId,
           "tableSessions",
-          tableSessionLocal.firestoreId,
+          activeSession.firestoreId,
         ),
         { totalBill: newTotal, updatedAt: serverTimestamp() },
       );
       updateSession({ totalBill: newTotal });
       setSessionTotal(newTotal);
-      return tableSessionLocal.firestoreId;
+      return activeSession.firestoreId;
     }
 
     const sessionRef = await addDoc(
@@ -425,8 +396,8 @@ const Order = () => {
       total: totalValue,
       status: "pending",
       createdAt: serverTimestamp(),
-      sessionId: sid,
     };
+    if (sid) orderData.sessionId = sid;
     if (paymentRef) {
       orderData.paymentStatus = "paid";
       orderData.paymentRef = paymentRef;
@@ -437,16 +408,33 @@ const Order = () => {
       orderData,
     );
 
-    const sessionDoc = await getDoc(
-      doc(db, "restaurants", restaurantId, "tableSessions", sid),
-    );
-    const existingIds = sessionDoc.exists()
-      ? sessionDoc.data().orderIds || []
-      : [];
-    await updateDoc(
-      doc(db, "restaurants", restaurantId, "tableSessions", sid),
-      { orderIds: [...existingIds, docRef.id] },
-    );
+    if (sid) {
+      const sessionDoc = await getDoc(
+        doc(db, "restaurants", restaurantId, "tableSessions", sid),
+      );
+      const existingIds = sessionDoc.exists()
+        ? sessionDoc.data().orderIds || []
+        : [];
+      await updateDoc(
+        doc(db, "restaurants", restaurantId, "tableSessions", sid),
+        { orderIds: [...existingIds, docRef.id] },
+      );
+    }
+
+    if (paymentRef && sid) {
+      await updateDoc(
+        doc(db, "restaurants", restaurantId, "tableSessions", sid),
+        {
+          status: "paid",
+          paidAt: serverTimestamp(),
+          closedAt: serverTimestamp(),
+          paymentStatus: "paid",
+          paymentRef,
+        },
+      );
+      updateSession({ status: "paid", paymentStatus: "paid", paymentRef });
+      setSessionStatus("paid");
+    }
 
     saveOrderId(docRef.id);
     setOrderId(docRef.id);
@@ -462,7 +450,6 @@ const Order = () => {
   const handleSubmit = async () => {
     if (submitting || isPayingRef.current) return;
     if (!name) return window.alert("Please enter your name.");
-    if (!email) return window.alert("Please enter your email.");
     if (!allergies)
       return window.alert("Please enter allergies or type 'none'.");
 
@@ -567,9 +554,12 @@ const Order = () => {
 
       let handler;
       try {
+        const paymentEmail =
+          email.trim() ||
+          `guest-${restaurantId}-${Date.now()}@payments.servrr.local`;
         handler = window.PaystackPop.setup({
           key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-          email: email,
+          email: paymentEmail,
           amount: Math.round(totalValue * 100),
           currency: "NGN",
           ref: `SERVRR-${restaurantId}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -602,27 +592,6 @@ const Order = () => {
       window.alert("Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleRequestBill = async () => {
-    if (!sessionId) return;
-    setRequestingBill(true);
-    try {
-      await updateDoc(
-        doc(db, "restaurants", restaurantId, "tableSessions", sessionId),
-        {
-          status: "awaiting_payment",
-          billRequestedAt: serverTimestamp(),
-        },
-      );
-      updateSession({ status: "awaiting_payment" });
-      setBillRequested(true);
-      setShowModal(false);
-    } catch (err) {
-      console.error("Bill request failed:", err);
-    } finally {
-      setRequestingBill(false);
     }
   };
 
@@ -682,7 +651,7 @@ const Order = () => {
   }
 
   // Staff marked as paid/closed
-  if (sessionStatus === "paid" || sessionStatus === "closed") {
+  if ((sessionStatus === "paid" || sessionStatus === "closed") && !showModal) {
     const handleNewOrder = () => {
       clearSession();
       setSessionStatus("open");
@@ -787,11 +756,8 @@ const Order = () => {
         <SuccessModal
           name={confirmedName}
           orderId={orderId}
-          sessionId={sessionId}
           accent={accent}
           onClose={handleModalClose}
-          onRequestBill={handleRequestBill}
-          showBillOption={!!sessionId}
         />
       )}
 
@@ -884,10 +850,10 @@ const Order = () => {
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Email</label>
+                  <label className={labelCls}>Email Optional</label>
                   <input
                     type="email"
-                    placeholder="your@email.com"
+                    placeholder="For receipt or payment updates"
                     className={inputCls}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -1087,32 +1053,6 @@ const Order = () => {
                     </>
                   )}
                 </button>
-
-                {sessionId && (
-                  <button
-                    type="button"
-                    onClick={handleRequestBill}
-                    disabled={requestingBill}
-                    className="w-full bg-transparent border border-white/10 hover:border-white/30 text-white/50 hover:text-white font-semibold py-3.5 rounded-full transition-all cursor-pointer flex items-center justify-center gap-2 text-sm disabled:opacity-40"
-                  >
-                    {requestingBill ? (
-                      <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <svg
-                          className="w-4 h-4"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" />
-                        </svg>
-                        Request the Bill · ₦{sessionTotal.toLocaleString()}
-                      </>
-                    )}
-                  </button>
-                )}
               </div>
             </div>
           </div>

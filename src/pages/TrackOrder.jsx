@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import {
   doc,
   onSnapshot,
   updateDoc,
-  collection,
-  orderBy,
-  query,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useRestaurant } from "../context/RestaurantContext";
@@ -38,7 +36,6 @@ const STATUS_CONFIG = {
 
 const TrackOrder = () => {
   const { orderId, restaurantId } = useParams();
-  const navigate = useNavigate();
   const { profile } = useRestaurant();
 
   // Dynamic accent from profile
@@ -53,24 +50,9 @@ const TrackOrder = () => {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editItems, setEditItems] = useState(null);
-  const [showAddMenu, setShowAddMenu] = useState(false);
-  const [menuFilter, setMenuFilter] = useState("All");
-  const [liveMenu, setLiveMenu] = useState([]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  useEffect(() => {
-    const q = query(
-      collection(db, "restaurants", restaurantId, "menu"),
-      orderBy("createdAt", "asc"),
-    );
-    return onSnapshot(q, (snap) => {
-      setLiveMenu(
-        snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((i) => i.available !== false),
-      );
-    });
-  }, [restaurantId]);
+  const [tableSession, setTableSession] = useState(null);
+  const [requestingBill, setRequestingBill] = useState(false);
 
   useEffect(() => {
     if (!orderId) return;
@@ -92,9 +74,22 @@ const TrackOrder = () => {
     );
   }, [orderId, restaurantId]);
 
+  useEffect(() => {
+    if (!order?.sessionId) {
+      setTableSession(null);
+      return;
+    }
+    return onSnapshot(
+      doc(db, "restaurants", restaurantId, "tableSessions", order.sessionId),
+      (snap) => {
+        setTableSession(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+      },
+    );
+  }, [order?.sessionId, restaurantId]);
+
+  const isPaidOnline = order?.paymentStatus === "paid";
   const isPending = order?.status === "pending";
-  const canAddMore =
-    order?.status === "pending" || order?.status === "in_progress";
+  const canEditOrder = !isPaidOnline && isPending;
 
   const handleCopyId = () => {
     navigator.clipboard.writeText(orderId);
@@ -112,23 +107,13 @@ const TrackOrder = () => {
     });
   };
 
-  const addMenuItem = (menuItem) => {
-    setEditItems((prev) => {
-      const existing = prev.findIndex((i) => i.name === menuItem.name);
-      if (existing >= 0) {
-        const next = [...prev];
-        next[existing] = { ...next[existing], qty: next[existing].qty + 1 };
-        return next;
-      }
-      return [...prev, { name: menuItem.name, price: menuItem.price, qty: 1 }];
-    });
-  };
-
   const editTotal = editItems
     ? editItems.reduce((sum, i) => sum + i.price * i.qty, 0)
     : 0;
 
   const saveChanges = async () => {
+    if (isPaidOnline) return window.alert("This order has already been paid.");
+    if (!isPending) return window.alert("This order can no longer be edited.");
     if (!editItems || editItems.length === 0)
       return window.alert("You need at least one item.");
     setSaving(true);
@@ -143,6 +128,24 @@ const TrackOrder = () => {
       window.alert("Failed to save. Try again.");
     }
     setSaving(false);
+  };
+
+  const handleRequestBill = async () => {
+    if (!order?.sessionId || requestingBill) return;
+    setRequestingBill(true);
+    try {
+      await updateDoc(
+        doc(db, "restaurants", restaurantId, "tableSessions", order.sessionId),
+        {
+          status: "awaiting_payment",
+          billRequestedAt: serverTimestamp(),
+        },
+      );
+    } catch (err) {
+      window.alert("Failed to request bill. Try again.");
+    } finally {
+      setRequestingBill(false);
+    }
   };
 
   if (loading)
@@ -173,15 +176,18 @@ const TrackOrder = () => {
 
   const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
   const currentStep = STATUS_STEPS.indexOf(order.status);
-  const categories = ["All", ...new Set(liveMenu.map((m) => m.category))];
-  const filteredMenu =
-    menuFilter === "All"
-      ? liveMenu
-      : liveMenu.filter((m) => m.category === menuFilter);
   const lockedItemNames =
     !isPending && order?.items
       ? new Set(order.items.map((i) => i.name))
       : new Set();
+  const sessionStatus = tableSession?.status;
+  const billAlreadyRequested = sessionStatus === "awaiting_payment";
+  const billClosed = sessionStatus === "paid" || sessionStatus === "closed";
+  const canRequestBill =
+    Boolean(order.sessionId) &&
+    !isPaidOnline &&
+    !billAlreadyRequested &&
+    !billClosed;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -458,15 +464,98 @@ const TrackOrder = () => {
 
         {/* Status message */}
         <div className="bg-[#111111] border border-white/5 p-5 mb-8 text-sm text-white/50 leading-relaxed">
-          {order.status === "pending" &&
-            "⏳ Your order has been received and is waiting to be prepared. You can edit or add items below."}
-          {order.status === "in_progress" &&
-            "👨‍🍳 Your order is being prepared right now. You can still add new items but existing ones are locked."}
-          {order.status === "ready" &&
+          {isPaidOnline &&
+            "Your payment is confirmed. Staff will prepare the order exactly as paid."}
+          {!isPaidOnline && order.status === "pending" &&
+            "⏳ Your order has been received and is waiting to be prepared. You can edit it below while it is still pending."}
+          {!isPaidOnline && order.status === "in_progress" &&
+            "👨‍🍳 Your order is being prepared right now. To add more food, go back to the menu and place another order."}
+          {!isPaidOnline && order.status === "ready" &&
             "🛎️ Your order is ready! A waiter will bring it to your table shortly."}
-          {order.status === "completed" &&
+          {!isPaidOnline && order.status === "completed" &&
             "✅ Your order has been served. Enjoy your meal!"}
         </div>
+
+        {/* Payment / bill action */}
+        {isPaidOnline ? (
+          <div className="bg-green-500/10 border border-green-500/25 p-5 mb-8">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-green-500/15 flex items-center justify-center text-green-400">
+                <svg
+                  className="w-5 h-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <path d="M20 6L9 17l-5-5" strokeLinecap="round" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-green-400 font-bold text-sm">Paid Online</p>
+                <p className="text-white/40 text-xs">
+                  Payment is confirmed and the table bill is closed.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : order.sessionId ? (
+          <div className="bg-[#111111] border border-white/5 p-5 mb-8">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <div>
+                <p className="text-white font-bold text-sm">Table Bill</p>
+                <p className="text-white/35 text-xs">
+                  ₦{Number(tableSession?.totalBill || order.total || 0).toLocaleString()}
+                </p>
+              </div>
+              <span
+                className={`text-[10px] font-semibold px-2 py-1 border ${
+                  billAlreadyRequested
+                    ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/25"
+                    : billClosed
+                      ? "bg-white/5 text-white/30 border-white/10"
+                      : "bg-green-500/10 text-green-400 border-green-500/25"
+                }`}
+              >
+                {billAlreadyRequested
+                  ? "Bill Requested"
+                  : billClosed
+                    ? "Closed"
+                    : "Open"}
+              </span>
+            </div>
+            {canRequestBill && (
+              <button
+                type="button"
+                onClick={handleRequestBill}
+                disabled={requestingBill}
+                className="w-full bg-transparent border border-white/10 hover:border-white/30 text-white/60 hover:text-white font-semibold py-3 rounded-full transition-all cursor-pointer flex items-center justify-center gap-2 text-sm disabled:opacity-40"
+              >
+                {requestingBill ? (
+                  <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <svg
+                      className="w-4 h-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" />
+                    </svg>
+                    Request Bill
+                  </>
+                )}
+              </button>
+            )}
+            {billAlreadyRequested && (
+              <p className="text-white/30 text-xs">
+                Your bill has been sent to staff. They will be with you shortly.
+              </p>
+            )}
+          </div>
+        ) : null}
 
         {/* Order items */}
         <div className="bg-[#111111] border border-white/5 mb-6">
@@ -479,7 +568,7 @@ const TrackOrder = () => {
             )}
             {order.status === "in_progress" && (
               <span className="text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 font-semibold">
-                New items only
+                Locked
               </span>
             )}
           </div>
@@ -500,7 +589,7 @@ const TrackOrder = () => {
                       </span>
                     )}
                   </div>
-                  {!isLocked && (isPending || canAddMore) ? (
+                  {canEditOrder ? (
                     <div className="flex items-center gap-0">
                       <button
                         onClick={() => changeQty(i, -1)}
@@ -545,137 +634,17 @@ const TrackOrder = () => {
               </span>
               <span className="font-black text-sm" style={{ color: accent }}>
                 ₦
-                {(canAddMore
+                {(canEditOrder
                   ? editTotal
                   : Number(order.total || 0)
                 ).toLocaleString()}
               </span>
             </div>
           </div>
-
-          {canAddMore && (
-            <div className="px-5 pb-5">
-              <button
-                onClick={() => setShowAddMenu(!showAddMenu)}
-                className="w-full border border-dashed border-white/15 text-white/40 text-xs font-semibold py-3 transition-all cursor-pointer bg-transparent flex items-center justify-center gap-2"
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = accent;
-                  e.currentTarget.style.color = accent;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "";
-                  e.currentTarget.style.color = "";
-                }}
-              >
-                <svg
-                  className="w-3.5 h-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-                {showAddMenu ? "Hide Menu" : "Add More Items"}
-              </button>
-            </div>
-          )}
         </div>
 
-        {/* Add items panel */}
-        {canAddMore && showAddMenu && (
-          <div className="bg-[#111111] border border-white/5 mb-6">
-            <div className="px-5 py-4 border-b border-white/5">
-              <p className="text-white font-bold text-sm mb-3">Add from Menu</p>
-              <div className="flex gap-2 flex-wrap">
-                {categories.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setMenuFilter(cat)}
-                    className="px-3 py-1 text-xs font-semibold border transition-all cursor-pointer"
-                    style={
-                      menuFilter === cat
-                        ? {
-                            background: accent,
-                            borderColor: accent,
-                            color: "white",
-                          }
-                        : {
-                            background: "transparent",
-                            borderColor: "rgba(255,255,255,0.1)",
-                            color: "rgba(255,255,255,0.4)",
-                          }
-                    }
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="p-5 space-y-2 max-h-72 overflow-y-auto">
-              {filteredMenu.length === 0 ? (
-                <p className="text-white/20 text-sm text-center py-4">
-                  No items in this category.
-                </p>
-              ) : (
-                filteredMenu.map((item) => {
-                  const inOrder = editItems?.find((i) => i.name === item.name);
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between py-2 border-b border-white/5 last:border-0"
-                    >
-                      <div>
-                        <p className="text-white/70 text-sm">{item.name}</p>
-                        <p
-                          className="text-xs font-semibold"
-                          style={{ color: accent }}
-                        >
-                          ₦{Number(item.price).toLocaleString()}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => addMenuItem(item)}
-                        className="text-xs font-semibold px-3 py-1.5 border transition-all cursor-pointer"
-                        style={
-                          inOrder
-                            ? {
-                                background: `${accent}33`,
-                                borderColor: `${accent}66`,
-                                color: accent,
-                              }
-                            : {
-                                background: "transparent",
-                                borderColor: "rgba(255,255,255,0.15)",
-                                color: "white",
-                              }
-                        }
-                        onMouseEnter={(e) => {
-                          if (!inOrder) {
-                            e.currentTarget.style.background = accent;
-                            e.currentTarget.style.borderColor = accent;
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!inOrder) {
-                            e.currentTarget.style.background = "transparent";
-                            e.currentTarget.style.borderColor =
-                              "rgba(255,255,255,0.15)";
-                          }
-                        }}
-                      >
-                        {inOrder ? `+1 (${inOrder.qty})` : "+ Add"}
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Save button */}
-        {canAddMore && (
+        {canEditOrder && (
           <button
             onClick={saveChanges}
             disabled={saving}
@@ -706,12 +675,28 @@ const TrackOrder = () => {
           </button>
         )}
 
+        <Link
+          to={`/${restaurantId}/menu`}
+          className="w-full bg-transparent border border-white/10 hover:border-white/30 text-white/60 hover:text-white font-semibold py-3.5 rounded-full transition-all flex items-center justify-center gap-2 text-sm no-underline mb-4"
+        >
+          <svg
+            className="w-4 h-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          Back to Menu
+        </Link>
+
         <p className="text-white/20 text-xs text-center">
-          {isPending
+          {isPaidOnline
+            ? "Paid online orders cannot be edited after payment."
+            : isPending
             ? "Changes can only be made while your order is pending."
-            : canAddMore
-              ? "Your order is being prepared. You can still add new items."
-              : "Your order can no longer be edited."}
+            : "This order can no longer be edited. To add more items, place another order from the menu."}
         </p>
       </div>
     </div>

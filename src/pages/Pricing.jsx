@@ -49,7 +49,7 @@ const plans = [
   },
   {
     name: "Starter",
-    price: "₦10,000",
+    price: "₦20,000",
     period: "/month",
     description: "Perfect for cafes and small restaurants going digital.",
     features: [
@@ -63,7 +63,7 @@ const plans = [
   },
   {
     name: "Pro",
-    price: "₦20,000",
+    price: "₦40,000",
     period: "/month",
     description: "Built for busy restaurants that need full control.",
     features: [

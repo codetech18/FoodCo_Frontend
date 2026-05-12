@@ -62,13 +62,13 @@ const ChartCard = ({ title, subtitle, children }) => (
 );
 
 const PLAN_OPTIONS = [
-  { key: "starter", label: "Starter", price: 10000 },
-  { key: "pro",     label: "Pro",     price: 20000 },
+  { key: "starter", label: "Starter", price: 20000 },
+  { key: "pro",     label: "Pro",     price: 40000 },
 ];
 
 const PaymentModal = ({ restaurant, onConfirm, onCancel, loading }) => {
   const [selectedPlan, setSelectedPlan] = useState(restaurant.plan || "starter");
-  const price = PLAN_OPTIONS.find((p) => p.key === selectedPlan)?.price || 10000;
+  const price = PLAN_OPTIONS.find((p) => p.key === selectedPlan)?.price || 20000;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
@@ -628,7 +628,7 @@ const SuperAdminDashboard = () => {
     setConfirm(null);
   };
 
-  const PLAN_PRICES = { starter: 10000, pro: 20000 };
+  const PLAN_PRICES = { starter: 20000, pro: 40000 };
 
   const handleMarkPaid = async (restaurantId, selectedPlan) => {
     setActionLoading(restaurantId);
@@ -658,7 +658,7 @@ const SuperAdminDashboard = () => {
       {
         date: serverTimestamp(),
         plan: selectedPlan,
-        amount: PLAN_PRICES[selectedPlan] || 10000,
+        amount: PLAN_PRICES[selectedPlan] || 20000,
         status: "paid",
       },
     );

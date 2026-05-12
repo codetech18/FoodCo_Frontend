@@ -26,7 +26,7 @@ const fmtDate = (ts) => {
   });
 };
 
-const PLAN_PRICES = { starter: 10000, pro: 20000 };
+const PLAN_PRICES = { starter: 20000, pro: 40000 };
 const PLAN_LABELS = { starter: "Starter", pro: "Pro" };
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ const BillingTab = () => {
 
   const trialDaysLeft = daysLeft(profile?.trialEndsAt);
   const plan = profile?.plan || "starter";
-  const monthlyFee = PLAN_PRICES[plan] || 10000;
+  const monthlyFee = PLAN_PRICES[plan] || 20000;
 
   const pricingTiers = [
     {
@@ -88,7 +88,7 @@ const BillingTab = () => {
     {
       id: "starter",
       name: "Starter",
-      price: "₦10,000",
+      price: "₦20,000",
       features: [
         "Up to 300 orders/month",
         "Menu management",
@@ -99,7 +99,7 @@ const BillingTab = () => {
     {
       id: "pro",
       name: "Pro",
-      price: "₦20,000",
+      price: "₦40,000",
       isPopular: true,
       features: [
         "Unlimited orders",
