@@ -1,4 +1,5 @@
 import React, { Suspense, lazy } from "react";
+import { Analytics } from "@vercel/analytics/react";
 import {
   BrowserRouter,
   Routes,
@@ -134,6 +135,7 @@ const App = () => {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
+        <Analytics />
       </AuthProvider>
     </BrowserRouter>
   );

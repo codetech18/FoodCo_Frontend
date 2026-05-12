@@ -15,11 +15,10 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/config";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useListItemsAndTotalPrice } from "../../Context";
 import { useOrder } from "../../Context2";
 import { saveOrderId } from "../../utils/orderCache";
 import { useRestaurant } from "../../context/RestaurantContext";
-import { getTableSession, clearTableSession } from "../../utils/tableToken";
+import { getTableSession } from "../../utils/tableToken";
 import {
   getSession,
   saveSession,
@@ -31,11 +30,8 @@ import {
 const SuccessModal = ({
   name,
   orderId,
-  sessionId,
   onClose,
-  onRequestBill,
   accent,
-  showBillOption,
 }) => {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
@@ -106,51 +102,24 @@ const SuccessModal = ({
           </div>
         </div>
 
-        <div className="h-px bg-white/5 mb-5" />
-
-        <div className="flex flex-col gap-3">
-          <button
-            onClick={onClose}
-            className="w-full text-white font-bold py-3.5 rounded-full transition-all cursor-pointer border-none flex items-center justify-center gap-2"
-            style={{ background: accent }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        <button
+          onClick={onClose}
+          className="w-full text-white font-bold py-3.5 rounded-full transition-all cursor-pointer border-none flex items-center justify-center gap-2"
+          style={{ background: accent }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        >
+          Track This Order
+          <svg
+            className="w-4 h-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
           >
-            Track This Order
-            <svg
-              className="w-4 h-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
-          </button>
-
-          {showBillOption && (
-            <>
-              <button
-                onClick={onRequestBill}
-                className="w-full bg-transparent border border-white/10 hover:border-white/30 text-white/60 hover:text-white font-semibold py-3.5 rounded-full transition-all cursor-pointer flex items-center justify-center gap-2 text-sm"
-              >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" />
-                </svg>
-                Request the Bill
-              </button>
-              <p className="text-white/20 text-xs text-center">
-                Want to order more? Just close this and add more items.
-              </p>
-            </>
-          )}
-        </div>
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+        </button>
       </div>
     </div>
   );
@@ -207,16 +176,61 @@ const Order = () => {
   const accent = profile?.accentColor || "#fa5631";
   const paymentMode = profile?.paymentMode || "at_table";
 
-  const tableToken = getTableSession(restaurantId);
-  // Re-read session fresh — it may have been cleared by a new QR scan in Menu.jsx
+  // ─── DEBUG BYPASS (local desktop testing without QR token) ──────────────────
+  const [debugBypass, setDebugBypass] = useState(false);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+
+    window.__enableOrderDebug = () => {
+      sessionStorage.setItem("order_debug_bypass", "true");
+      console.log("✅ Order debug bypass enabled. Click the Order tab again.");
+      window.dispatchEvent(new Event("order-debug-update"));
+    };
+    window.__disableOrderDebug = () => {
+      sessionStorage.removeItem("order_debug_bypass");
+      console.log("❌ Order debug bypass disabled.");
+      window.dispatchEvent(new Event("order-debug-update"));
+    };
+    window.__isOrderDebugEnabled = () =>
+      sessionStorage.getItem("order_debug_bypass") === "true";
+
+    const handleDebugUpdate = () => {
+      setDebugBypass((prev) => !prev);
+    };
+    window.addEventListener("order-debug-update", handleDebugUpdate);
+    return () => {
+      window.removeEventListener("order-debug-update", handleDebugUpdate);
+      delete window.__enableOrderDebug;
+      delete window.__disableOrderDebug;
+      delete window.__isOrderDebugEnabled;
+    };
+  }, []);
+
+  const isDebugBypass =
+    import.meta.env.DEV &&
+    sessionStorage.getItem("order_debug_bypass") === "true";
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // Preload Paystack script ONCE to avoid await breaking popup on mobile
+  useEffect(() => {
+    if (window.PaystackPop) return;
+    const script = document.createElement("script");
+    script.src = "https://js.paystack.co/v1/inline.js";
+    script.async = true;
+    script.onerror = () => console.error("Failed to load Paystack script");
+    document.body.appendChild(script);
+  }, []);
+
+  const tableToken =
+    getTableSession(restaurantId) || (isDebugBypass ? { table: "99" } : null);
   const tableSessionLocal = getSession(restaurantId);
 
-  // If tableToken table doesn't match the stored session table, treat as fresh start
   const isNewTable =
     tableToken &&
     tableSessionLocal &&
     tableToken.table !== tableSessionLocal.table;
   const activeSession = isNewTable ? null : tableSessionLocal;
+  const activeSessionId = activeSession?.firestoreId || null;
 
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
@@ -230,7 +244,6 @@ const Order = () => {
   );
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [requestingBill, setRequestingBill] = useState(false);
   const [confirmedName, setConfirmedName] = useState("");
   const [orderId, setOrderId] = useState(null);
   const [sessionId, setSessionId] = useState(
@@ -249,34 +262,39 @@ const Order = () => {
   const [monthOrderCount, setMonthOrderCount] = useState(null);
   const paymentSuccessRef = useRef(false);
   const paymentTimeoutRef = useRef(null);
+  const isPayingRef = useRef(false);
 
-  // Pre-load this month's order count for Starter plan cap check (keeps Paystack open synchronous)
+  // Pre-load this month's order count for Starter plan cap check
   useEffect(() => {
     if (!restaurantId || profile?.plan !== "starter") return;
     const now = new Date();
-    const startOfMonth = Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    const startOfMonth = Timestamp.fromDate(
+      new Date(now.getFullYear(), now.getMonth(), 1),
+    );
     getDocs(
       query(
         collection(db, "restaurants", restaurantId, "orders"),
         where("createdAt", ">=", startOfMonth),
       ),
-    ).then((snap) => setMonthOrderCount(snap.size)).catch(() => {});
+    )
+      .then((snap) => setMonthOrderCount(snap.size))
+      .catch(() => {});
   }, [restaurantId, profile?.plan]);
 
-  // ── Reset session state when a fresh QR scan is detected ────────────────
+  // Reset session state when a fresh QR scan is detected
   useEffect(() => {
-    // Fresh start: no active session OR scanning a different table
+    if (isNewTable) clearSession();
     if ((!tableSessionLocal && tableToken) || isNewTable) {
       setSessionStatus("open");
       setSessionId(null);
       setSessionTotal(0);
       setBillRequested(false);
     }
-  }, []);
+  }, [tableSessionLocal, tableToken, isNewTable]);
 
-  // ── Live listener on the Firestore session so customer sees updates instantly ──
+  // Live listener on the Firestore session
   useEffect(() => {
-    const sid = activeSession?.firestoreId || sessionId;
+    const sid = activeSessionId || sessionId;
     if (!sid || !restaurantId) return;
     const unsub = onSnapshot(
       doc(db, "restaurants", restaurantId, "tableSessions", sid),
@@ -287,7 +305,6 @@ const Order = () => {
         setSessionTotal(data.totalBill || 0);
         if (data.status === "awaiting_payment") setBillRequested(true);
         if (data.status === "paid" || data.status === "closed") {
-          // Staff closed the bill — clear local session and show completion screen
           clearSession();
           setBillRequested(false);
           setSessionStatus(data.status);
@@ -295,10 +312,9 @@ const Order = () => {
       },
     );
     return unsub;
-  }, [sessionId, restaurantId]);
+  }, [sessionId, restaurantId, activeSessionId]);
 
   const navigate = useNavigate();
-  const { listItemsAndTotalPrice } = useListItemsAndTotalPrice();
   const { orderItem, quantities, clearOrder } = useOrder();
 
   const calculateTotal = () => {
@@ -317,32 +333,29 @@ const Order = () => {
     0,
   );
 
-  // ── Open or retrieve a Firestore table session ────────────────────────────
+  // Open or retrieve a Firestore table session
   const getOrCreateSession = async (orderTotal) => {
-    // Check for existing open session for this table
-    if (tableSessionLocal?.firestoreId) {
-      // Update existing session total
-      const newTotal = (tableSessionLocal.totalBill || 0) + orderTotal;
+    if (activeSession?.firestoreId) {
+      const newTotal = (activeSession.totalBill || 0) + orderTotal;
       await updateDoc(
         doc(
           db,
           "restaurants",
           restaurantId,
           "tableSessions",
-          tableSessionLocal.firestoreId,
+          activeSession.firestoreId,
         ),
         { totalBill: newTotal, updatedAt: serverTimestamp() },
       );
       updateSession({ totalBill: newTotal });
       setSessionTotal(newTotal);
-      return tableSessionLocal.firestoreId;
+      return activeSession.firestoreId;
     }
 
-    // Create new session
     const sessionRef = await addDoc(
       collection(db, "restaurants", restaurantId, "tableSessions"),
       {
-        table,
+        table: isDebugBypass ? tableToken?.table || "99" : table,
         status: "open",
         openedAt: serverTimestamp(),
         totalBill: orderTotal,
@@ -354,7 +367,7 @@ const Order = () => {
     const localSession = {
       restaurantId,
       firestoreId: sessionRef.id,
-      table,
+      table: isDebugBypass ? tableToken?.table || "99" : table,
       status: "open",
       totalBill: orderTotal,
       paymentMode,
@@ -377,14 +390,14 @@ const Order = () => {
     const orderData = {
       customerName: name,
       email,
-      table,
+      table: isDebugBypass ? tableToken?.table || "99" : table,
       allergies,
       items,
       total: totalValue,
       status: "pending",
       createdAt: serverTimestamp(),
-      sessionId: sid,
     };
+    if (sid) orderData.sessionId = sid;
     if (paymentRef) {
       orderData.paymentStatus = "paid";
       orderData.paymentRef = paymentRef;
@@ -395,16 +408,33 @@ const Order = () => {
       orderData,
     );
 
-    const sessionDoc = await getDoc(
-      doc(db, "restaurants", restaurantId, "tableSessions", sid),
-    );
-    const existingIds = sessionDoc.exists()
-      ? sessionDoc.data().orderIds || []
-      : [];
-    await updateDoc(
-      doc(db, "restaurants", restaurantId, "tableSessions", sid),
-      { orderIds: [...existingIds, docRef.id] },
-    );
+    if (sid) {
+      const sessionDoc = await getDoc(
+        doc(db, "restaurants", restaurantId, "tableSessions", sid),
+      );
+      const existingIds = sessionDoc.exists()
+        ? sessionDoc.data().orderIds || []
+        : [];
+      await updateDoc(
+        doc(db, "restaurants", restaurantId, "tableSessions", sid),
+        { orderIds: [...existingIds, docRef.id] },
+      );
+    }
+
+    if (paymentRef && sid) {
+      await updateDoc(
+        doc(db, "restaurants", restaurantId, "tableSessions", sid),
+        {
+          status: "paid",
+          paidAt: serverTimestamp(),
+          closedAt: serverTimestamp(),
+          paymentStatus: "paid",
+          paymentRef,
+        },
+      );
+      updateSession({ status: "paid", paymentStatus: "paid", paymentRef });
+      setSessionStatus("paid");
+    }
 
     saveOrderId(docRef.id);
     setOrderId(docRef.id);
@@ -416,21 +446,27 @@ const Order = () => {
     setShowModal(true);
   };
 
+  // ─── FIXED handleSubmit (synchronous openIframe) ──────────────────────────
   const handleSubmit = async () => {
-    if (submitting) return;
+    if (submitting || isPayingRef.current) return;
     if (!name) return window.alert("Please enter your name.");
-    if (!email) return window.alert("Please enter your email.");
     if (!allergies)
       return window.alert("Please enter allergies or type 'none'.");
-    if (!table) return window.alert("Please enter your table number.");
+
+    const effectiveTable = isDebugBypass ? tableToken?.table || "99" : table;
+    if (!effectiveTable) return window.alert("Please enter your table number.");
     if (orderItem.length === 0)
       return window.alert("Please add items to your order first.");
 
     setPaymentError(null);
 
-    if (profile?.plan === "starter" && monthOrderCount !== null && monthOrderCount >= 300) {
+    if (
+      profile?.plan === "starter" &&
+      monthOrderCount !== null &&
+      monthOrderCount >= 300
+    ) {
       return window.alert(
-        "This restaurant has reached its 300 orders/month limit on the Starter plan. Please try again next month or ask the restaurant to upgrade their plan.",
+        "This restaurant has reached its 300 orders/month limit...",
       );
     }
 
@@ -440,74 +476,114 @@ const Order = () => {
           "Online payment is not configured for this restaurant yet.",
         );
       }
-      if (!window.PaystackPop) {
-        return window.alert(
-          "Payment system failed to load. Please refresh the page and try again.",
-        );
-      }
       if (!import.meta.env.VITE_PAYSTACK_PUBLIC_KEY) {
         return window.alert(
           "Payment is not configured yet. Please contact the restaurant.",
         );
       }
+      // Ensure Paystack script is ready (should be, due to preloading)
+      if (!window.PaystackPop) {
+        setPaymentError(
+          "Payment system still loading. Please wait and try again.",
+        );
+        return;
+      }
 
+      isPayingRef.current = true;
       setSubmitting(true);
       paymentSuccessRef.current = false;
 
-      // Safety net — if Paystack callbacks never fire (mobile bug), reset after 3 min
-      clearTimeout(paymentTimeoutRef.current);
+      // Clear any existing timeout
+      if (paymentTimeoutRef.current) clearTimeout(paymentTimeoutRef.current);
       paymentTimeoutRef.current = setTimeout(() => {
         if (!paymentSuccessRef.current) {
           setSubmitting(false);
-          setPaymentError("Payment window closed or timed out. Please try again.");
+          isPayingRef.current = false;
+          setPaymentError(
+            "Payment window closed or timed out. Please try again.",
+          );
         }
       }, 180000);
 
-      const handler = window.PaystackPop.setup({
-        key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-        email,
-        amount: Math.round(totalValue * 100),
-        currency: "NGN",
-        ref: `SERVRR-${restaurantId}-${Date.now()}`,
-        subaccount: profile.paystackSubaccountCode,
-        transaction_charge: 0,
-        bearer: "subaccount",
-        metadata: { restaurantId, table, customerName: name },
-        onClose: () => {
-          clearTimeout(paymentTimeoutRef.current);
-          if (!paymentSuccessRef.current) {
-            setSubmitting(false);
-            setPaymentError("Payment was cancelled. Your order was not placed.");
-          }
-        },
-        callback: async (response) => {
-          clearTimeout(paymentTimeoutRef.current);
-          paymentSuccessRef.current = true;
+      // Define callbacks (unchanged)
+      const onClosePlain = () => {
+        clearTimeout(paymentTimeoutRef.current);
+        if (!paymentSuccessRef.current) {
+          setSubmitting(false);
+          isPayingRef.current = false;
+          setPaymentError("Payment was cancelled. Your order was not placed.");
+        }
+      };
+
+      const callbackPlain = (response) => {
+        clearTimeout(paymentTimeoutRef.current);
+        paymentSuccessRef.current = true;
+        (async () => {
           try {
-            const verifyRes = await fetch("https://foodco-backend.onrender.com/verify-payment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ reference: response.reference }),
-            });
+            const verifyRes = await fetch(
+              "https://foodco-backend.onrender.com/verify-payment",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reference: response.reference }),
+              },
+            );
             const verifyData = await verifyRes.json();
             if (!verifyData.success) {
-              window.alert("Payment verification failed. Please show this reference to staff: " + response.reference);
+              window.alert(
+                "Payment verification failed. Please show this reference to staff: " +
+                  response.reference,
+              );
               setSubmitting(false);
+              isPayingRef.current = false;
               return;
             }
             await saveOrderToFirestore(response.reference);
           } catch (err) {
             console.error("Order save error:", err);
-            window.alert("Payment received but order failed to save. Please show your payment reference to staff: " + response.reference);
+            window.alert(
+              "Payment received but order failed to save. Please show your payment reference to staff: " +
+                response.reference,
+            );
           } finally {
             setSubmitting(false);
+            isPayingRef.current = false;
           }
-        },
-      });
+        })();
+      };
+
+      let handler;
+      try {
+        const paymentEmail =
+          email.trim() ||
+          `guest-${restaurantId}-${Date.now()}@payments.servrr.local`;
+        handler = window.PaystackPop.setup({
+          key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+          email: paymentEmail,
+          amount: Math.round(totalValue * 100),
+          currency: "NGN",
+          ref: `SERVRR-${restaurantId}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          subaccount: profile.paystackSubaccountCode,
+          transaction_charge: 0,
+          bearer: "subaccount",
+          metadata: { restaurantId, table: effectiveTable, customerName: name },
+          onClose: onClosePlain,
+          callback: callbackPlain,
+        });
+      } catch (setupError) {
+        console.error("Paystack setup error:", setupError);
+        setSubmitting(false);
+        isPayingRef.current = false;
+        setPaymentError("Payment setup failed: " + setupError.message);
+        return;
+      }
+
+      // CRITICAL: openIframe() must be called synchronously, without any await before it.
       handler.openIframe();
       return;
     }
 
+    // ---- Pay at table flow ----
     setSubmitting(true);
     try {
       await saveOrderToFirestore();
@@ -516,27 +592,6 @@ const Order = () => {
       window.alert("Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleRequestBill = async () => {
-    if (!sessionId) return;
-    setRequestingBill(true);
-    try {
-      await updateDoc(
-        doc(db, "restaurants", restaurantId, "tableSessions", sessionId),
-        {
-          status: "awaiting_payment",
-          billRequestedAt: serverTimestamp(),
-        },
-      );
-      updateSession({ status: "awaiting_payment" });
-      setBillRequested(true);
-      setShowModal(false);
-    } catch (err) {
-      console.error("Bill request failed:", err);
-    } finally {
-      setRequestingBill(false);
     }
   };
 
@@ -550,8 +605,8 @@ const Order = () => {
   const labelCls =
     "block text-white/40 text-xs font-semibold tracking-widest uppercase mb-2";
 
-  // ── No valid table token — show scan prompt ───────────────────────────────
-  if (!tableToken) {
+  // ─── TABLE TOKEN CHECK WITH DEBUG BYPASS ────────────────────────────────────
+  if (!tableToken && !isDebugBypass) {
     return (
       <section
         id="Order"
@@ -595,8 +650,8 @@ const Order = () => {
     );
   }
 
-  // ── Staff marked as paid/closed ──────────────────────────────────────────
-  if (sessionStatus === "paid" || sessionStatus === "closed") {
+  // Staff marked as paid/closed
+  if ((sessionStatus === "paid" || sessionStatus === "closed") && !showModal) {
     const handleNewOrder = () => {
       clearSession();
       setSessionStatus("open");
@@ -645,7 +700,6 @@ const Order = () => {
               We hope to see you again soon. 🙏
             </p>
 
-            {/* Allow starting a fresh order — e.g. ordering dessert after paying */}
             {tableToken && (
               <button
                 onClick={handleNewOrder}
@@ -678,7 +732,7 @@ const Order = () => {
     );
   }
 
-  // ── Bill already requested ────────────────────────────────────────────────
+  // Bill already requested
   if (billRequested) {
     return (
       <section
@@ -692,17 +746,18 @@ const Order = () => {
     );
   }
 
+  // ─── MAIN ORDER FORM ──────────────────────────────────────────────────────
+  const effectiveTableValue = isDebugBypass ? tableToken?.table || "99" : table;
+  const showTableReadOnly = isDebugBypass || !!tableToken?.table;
+
   return (
     <>
       {showModal && (
         <SuccessModal
           name={confirmedName}
           orderId={orderId}
-          sessionId={sessionId}
           accent={accent}
           onClose={handleModalClose}
-          onRequestBill={handleRequestBill}
-          showBillOption={!!sessionId}
         />
       )}
 
@@ -736,7 +791,7 @@ const Order = () => {
             <div>
               {/* Session status bar */}
               <div className="flex items-center gap-3 flex-wrap mb-5">
-                {tableToken?.table && (
+                {(tableToken?.table || isDebugBypass) && (
                   <div
                     className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border"
                     style={{
@@ -749,7 +804,8 @@ const Order = () => {
                       className="w-1.5 h-1.5 rounded-full animate-pulse"
                       style={{ background: accent }}
                     />
-                    Table {tableToken.table} · Verified ✓
+                    Table {effectiveTableValue} ·{" "}
+                    {isDebugBypass ? "DEBUG MODE ✓" : "Verified ✓"}
                   </div>
                 )}
                 {sessionTotal > 0 && (
@@ -794,10 +850,10 @@ const Order = () => {
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Email</label>
+                  <label className={labelCls}>Email Optional</label>
                   <input
                     type="email"
-                    placeholder="your@email.com"
+                    placeholder="For receipt or payment updates"
                     className={inputCls}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -816,10 +872,12 @@ const Order = () => {
                       type="number"
                       placeholder="e.g. 12"
                       className={inputCls}
-                      value={table}
-                      onChange={(e) => setTable(e.target.value)}
-                      readOnly={!!tableToken?.table}
-                      style={{ opacity: tableToken?.table ? 0.6 : 1 }}
+                      value={effectiveTableValue}
+                      onChange={(e) =>
+                        !showTableReadOnly && setTable(e.target.value)
+                      }
+                      readOnly={showTableReadOnly}
+                      style={{ opacity: showTableReadOnly ? 0.6 : 1 }}
                       onFocus={(e) =>
                         (e.target.style.borderColor = `${accent}99`)
                       }
@@ -949,11 +1007,18 @@ const Order = () => {
                       color: accent,
                     }}
                   >
-                    <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg
+                      className="w-4 h-4 flex-shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
                       <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
                       <line x1="1" y1="10" x2="23" y2="10" />
                     </svg>
-                    You will be redirected to Paystack to complete payment before your order is confirmed.
+                    You will be redirected to Paystack to complete payment
+                    before your order is confirmed.
                   </div>
                 )}
 
@@ -978,8 +1043,8 @@ const Order = () => {
                       {paymentMode === "pay_online"
                         ? `Pay ₦${totalPrice}`
                         : sessionTotal > 0
-                        ? "Add to Bill"
-                        : "Confirm Order"}
+                          ? "Add to Bill"
+                          : "Confirm Order"}
                       {totalCount > 0 && (
                         <span className="bg-white/20 text-xs font-black px-2 py-0.5 rounded-full">
                           {totalCount} item{totalCount !== 1 ? "s" : ""}
@@ -988,33 +1053,6 @@ const Order = () => {
                     </>
                   )}
                 </button>
-
-                {/* Request bill button — only shown if session is open */}
-                {sessionId && (
-                  <button
-                    type="button"
-                    onClick={handleRequestBill}
-                    disabled={requestingBill}
-                    className="w-full bg-transparent border border-white/10 hover:border-white/30 text-white/50 hover:text-white font-semibold py-3.5 rounded-full transition-all cursor-pointer flex items-center justify-center gap-2 text-sm disabled:opacity-40"
-                  >
-                    {requestingBill ? (
-                      <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <svg
-                          className="w-4 h-4"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" />
-                        </svg>
-                        Request the Bill · ₦{sessionTotal.toLocaleString()}
-                      </>
-                    )}
-                  </button>
-                )}
               </div>
             </div>
           </div>

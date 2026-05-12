@@ -28,7 +28,9 @@ app.get("/banks", async (req, res) => {
   try {
     const r = await fetch(
       "https://api.paystack.co/bank?country=nigeria&type=nuban&currency=NGN&per_page=100",
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } },
+      {
+        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      },
     );
     const data = await r.json();
     if (data.status) {
@@ -46,18 +48,24 @@ app.get("/banks", async (req, res) => {
 app.get("/resolve-account", async (req, res) => {
   const { account_number, bank_code } = req.query;
   if (!account_number || !bank_code) {
-    return res.status(400).json({ error: "account_number and bank_code are required" });
+    return res
+      .status(400)
+      .json({ error: "account_number and bank_code are required" });
   }
   try {
     const r = await fetch(
       `https://api.paystack.co/bank/resolve?account_number=${encodeURIComponent(account_number)}&bank_code=${encodeURIComponent(bank_code)}`,
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } },
+      {
+        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      },
     );
     const data = await r.json();
     if (data.status) {
       return res.json({ accountName: data.data.account_name });
     }
-    return res.status(400).json({ error: data.message || "Could not resolve account" });
+    return res
+      .status(400)
+      .json({ error: data.message || "Could not resolve account" });
   } catch (err) {
     console.error("Resolve account error:", err);
     return res.status(500).json({ error: "Request failed" });
@@ -68,7 +76,9 @@ app.get("/resolve-account", async (req, res) => {
 app.post("/create-subaccount", async (req, res) => {
   const { businessName, bankCode, accountNumber } = req.body;
   if (!businessName || !bankCode || !accountNumber) {
-    return res.status(400).json({ error: "businessName, bankCode, and accountNumber are required" });
+    return res.status(400).json({
+      error: "businessName, bankCode, and accountNumber are required",
+    });
   }
   try {
     const r = await fetch("https://api.paystack.co/subaccount", {
@@ -88,7 +98,9 @@ app.post("/create-subaccount", async (req, res) => {
     if (data.status) {
       return res.json({ subaccountCode: data.data.subaccount_code });
     }
-    return res.status(400).json({ error: data.message || "Subaccount creation failed" });
+    return res
+      .status(400)
+      .json({ error: data.message || "Subaccount creation failed" });
   } catch (err) {
     console.error("Create subaccount error:", err);
     return res.status(500).json({ error: "Request failed" });
@@ -103,16 +115,22 @@ app.post("/verify-payment", async (req, res) => {
   try {
     const paystackRes = await fetch(
       `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } },
+      {
+        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      },
     );
     const data = await paystackRes.json();
     if (data.data?.status === "success") {
       return res.json({ success: true, amount: data.data.amount });
     }
-    return res.status(400).json({ success: false, error: "Payment not successful" });
+    return res
+      .status(400)
+      .json({ success: false, error: "Payment not successful" });
   } catch (err) {
     console.error("Paystack verify error:", err);
-    return res.status(500).json({ success: false, error: "Verification request failed" });
+    return res
+      .status(500)
+      .json({ success: false, error: "Verification request failed" });
   }
 });
 
@@ -166,7 +184,9 @@ app.post("/send-receipt", async (req, res) => {
         </table>
       </div>`;
     })
-    .join('<hr style="border:none;border-top:1px solid #222;margin:16px 0;" />');
+    .join(
+      '<hr style="border:none;border-top:1px solid #222;margin:16px 0;" />',
+    );
 
   const html = `
     <div style="background:#0a0a0a;font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">

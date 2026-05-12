@@ -44,6 +44,7 @@ const Menu = () => {
   const [activeCategory, setActiveCategory] = useState("All");
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [expandedDescriptions, setExpandedDescriptions] = useState({});
   const navigate = useNavigate();
 
   const [searchParams] = useSearchParams();
@@ -94,9 +95,64 @@ const Menu = () => {
     activeCategory === "All"
       ? menuItems
       : menuItems.filter((item) => item.category === activeCategory);
+  const orderTotal = Object.values(quantities).reduce(
+    (sum, { price, qty }) => sum + Number(price || 0) * qty,
+    0,
+  );
+  const orderPath = `/${restaurantId}/order${tableParam ? `?table=${tableParam}` : ""}`;
+  const goToOrder = () => {
+    if (totalCount > 0) navigate(orderPath);
+  };
 
   return (
     <section id="Menu" className="bg-[#0a0a0a] py-28 relative">
+      {totalCount > 0 && (
+        <button
+          type="button"
+          onClick={goToOrder}
+          className="fixed right-4 bottom-6 md:right-6 md:bottom-8 z-40 flex items-center gap-3 text-white border shadow-2xl px-4 py-3 rounded-full cursor-pointer transition-all duration-300"
+          style={{
+            background: "#111111",
+            borderColor: `${accent}66`,
+            boxShadow: `0 12px 40px ${accent}26`,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = accent;
+            e.currentTarget.style.borderColor = accent;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "#111111";
+            e.currentTarget.style.borderColor = `${accent}66`;
+          }}
+        >
+          <span className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/10">
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="9" cy="21" r="1" />
+              <circle cx="20" cy="21" r="1" />
+              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+            </svg>
+            <span
+              className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full text-[10px] font-black flex items-center justify-center text-white"
+              style={{ background: accent }}
+            >
+              {totalCount}
+            </span>
+          </span>
+          <span className="hidden sm:flex flex-col items-start leading-tight">
+            <span className="text-xs font-bold">View Order</span>
+            <span className="text-[10px] text-white/50">
+              ₦{orderTotal.toLocaleString()}
+            </span>
+          </span>
+        </button>
+      )}
+
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent" />
 
       <div className="max-w-7xl mx-auto px-6 lg:px-10">
@@ -181,6 +237,9 @@ const Menu = () => {
           ) : (
             filtered.map((item) => {
               const qty = quantities[item.name]?.qty || 0;
+              const description = item.description || "";
+              const isLong = description.trim().length > 80;
+              const isExpanded = !!expandedDescriptions[item.id];
               return (
                 <div
                   key={item.id}
@@ -231,9 +290,37 @@ const Menu = () => {
                     <h3 className="text-white font-semibold text-sm mb-1 leading-snug">
                       {item.name}
                     </h3>
-                    <p className="text-white/40 text-xs leading-relaxed mb-3 flex-1">
-                      {item.description}
-                    </p>
+                    <div className="text-white/40 text-xs leading-relaxed mb-3 flex-1">
+                      <p
+                        style={
+                          isExpanded || !isLong
+                            ? undefined
+                            : {
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                              }
+                        }
+                      >
+                        {description}
+                      </p>
+                      {isLong && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedDescriptions((prev) => ({
+                              ...prev,
+                              [item.id]: !prev[item.id],
+                            }))
+                          }
+                          className="mt-1 bg-transparent border-none p-0 text-xs font-semibold cursor-pointer"
+                          style={{ color: accent }}
+                        >
+                          {isExpanded ? "See less" : "See more"}
+                        </button>
+                      )}
+                    </div>
                     <StarRow accent={accent} />
                     <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
                       <span
@@ -306,12 +393,7 @@ const Menu = () => {
         {!loading && menuItems.length > 0 && (
           <div className="flex flex-col items-center gap-3 mt-14">
             <button
-              onClick={() =>
-                totalCount > 0 &&
-                navigate(
-                  `/${restaurantId}/order${tableParam ? `?table=${tableParam}` : ""}`,
-                )
-              }
+              onClick={goToOrder}
               disabled={totalCount === 0}
               className="group inline-flex items-center gap-3 font-semibold px-10 py-4 rounded-full transition-all duration-300 bg-transparent cursor-pointer"
               style={
