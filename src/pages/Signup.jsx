@@ -69,7 +69,7 @@ const Signup = () => {
     email: "",
     password: "",
     confirmPassword: "",
-    paymentMode: "", // "pay_online" | "at_table"
+    paymentMode: "", // Initial preference: "pay_online" | "at_table"
     accentColor: "#fa5631",
     tagline: "",
     description: "",
@@ -218,7 +218,9 @@ const Signup = () => {
         contactEmail: formData.contactEmail,
         instagram: formData.instagram,
         twitter: formData.twitter,
+        paymentPreference: formData.paymentMode,
         paymentMode: formData.paymentMode,
+        paymentModeUpdatedAt: serverTimestamp(),
         subscriptionStatus: "trial",
         trialEndsAt,
         subscriptionPaidUntil: null,
@@ -352,11 +354,15 @@ const Signup = () => {
 
                     <div className="h-px bg-white/5" />
 
-                    {/* Payment mode selector */}
+                    {/* Payment preference selector */}
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">
-                        Payment Model *
+                        Preferred Payment Model *
                       </label>
+                      <p className="text-white/25 text-[10px] ml-1 leading-relaxed">
+                        This sets your starting payment model. Future changes
+                        are reviewed and activated by the SERVRR team.
+                      </p>
                       <div className="grid grid-cols-2 gap-3">
                         {[
                           {

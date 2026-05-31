@@ -182,7 +182,9 @@ const BillingTab = () => {
                   Payment Mode
                 </span>
                 <span className="text-sm font-semibold">
-                  {profile?.paymentMode === "at_table" ? "Pay at Table" : "Pay Online"}
+                  {profile?.paymentMode === "pay_online" || profile?.paymentMode === "online"
+                    ? "Pay Online"
+                    : "Pay at Table"}
                 </span>
               </div>
               <div>

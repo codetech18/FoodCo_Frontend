@@ -174,7 +174,10 @@ const Order = () => {
   const { restaurantId } = useParams();
   const { profile } = useRestaurant();
   const accent = profile?.accentColor || "#fa5631";
-  const paymentMode = profile?.paymentMode || "at_table";
+  const paymentMode =
+    profile?.paymentMode === "pay_online" || profile?.paymentMode === "online"
+      ? "pay_online"
+      : "at_table";
 
   // ─── DEBUG BYPASS (local desktop testing without QR token) ──────────────────
   const [debugBypass, setDebugBypass] = useState(false);

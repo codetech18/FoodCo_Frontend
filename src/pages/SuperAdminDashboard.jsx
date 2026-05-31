@@ -66,6 +66,17 @@ const PLAN_OPTIONS = [
   { key: "pro",     label: "Pro",     price: 40000 },
 ];
 
+const PAYMENT_MODE_OPTIONS = [
+  { key: "at_table", label: "Pay at Table" },
+  { key: "pay_online", label: "Pay Online" },
+];
+
+const normalizePaymentMode = (mode) =>
+  mode === "pay_online" || mode === "online" ? "pay_online" : "at_table";
+
+const paymentModeLabel = (mode) =>
+  normalizePaymentMode(mode) === "pay_online" ? "Pay Online" : "Pay at Table";
+
 const PaymentModal = ({ restaurant, onConfirm, onCancel, loading }) => {
   const [selectedPlan, setSelectedPlan] = useState(restaurant.plan || "starter");
   const price = PLAN_OPTIONS.find((p) => p.key === selectedPlan)?.price || 20000;
@@ -516,7 +527,10 @@ const SuperAdminDashboard = () => {
           ownerEmail: email || profile.contactEmail || "—",
           createdAt: profile.createdAt,
           suspended: profile.suspended || false,
-          paymentMode: profile.paymentMode || "at_table",
+          paymentMode: normalizePaymentMode(profile.paymentMode),
+          paymentPreference: normalizePaymentMode(
+            profile.paymentPreference || profile.paymentMode,
+          ),
           plan: profile.plan || "starter",
           subscriptionStatus: profile.subscriptionStatus || "trial",
           trialEndsAt,
@@ -581,6 +595,28 @@ const SuperAdminDashboard = () => {
     );
     setActionLoading(null);
     setConfirm(null);
+  };
+
+  const handlePaymentModeChange = async (restaurantId, paymentMode) => {
+    const nextMode = normalizePaymentMode(paymentMode);
+    setActionLoading(restaurantId);
+    try {
+      await updateDoc(doc(db, "restaurants", restaurantId, "profile", "info"), {
+        paymentMode: nextMode,
+        paymentModeUpdatedAt: serverTimestamp(),
+        paymentModeUpdatedBy: admin?.email || admin?.uid || "superadmin",
+      });
+      setRestaurants((prev) =>
+        prev.map((r) =>
+          r.restaurantId === restaurantId ? { ...r, paymentMode: nextMode } : r,
+        ),
+      );
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update payment mode. Try again.");
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const handleDelete = async (restaurantId) => {
@@ -1042,9 +1078,14 @@ const SuperAdminDashboard = () => {
                                     ✓ Paid
                                   </span>
                                 ))}
-                              {r.paymentMode === "online" && (
+                              {r.paymentMode === "pay_online" && (
                                 <span className="text-[9px] text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded font-black uppercase tracking-widest">
-                                  💳 Online
+                                  Pay Online
+                                </span>
+                              )}
+                              {r.paymentPreference !== r.paymentMode && (
+                                <span className="text-[9px] text-orange-300 bg-orange-500/10 px-2 py-0.5 rounded font-black uppercase tracking-widest">
+                                  Requested {paymentModeLabel(r.paymentPreference)}
                                 </span>
                               )}
                             </div>
@@ -1083,6 +1124,28 @@ const SuperAdminDashboard = () => {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 justify-end">
+                          <select
+                            value={r.paymentMode}
+                            disabled={actionLoading === r.restaurantId}
+                            onChange={(e) =>
+                              handlePaymentModeChange(
+                                r.restaurantId,
+                                e.target.value,
+                              )
+                            }
+                            className="bg-white/5 border border-white/10 rounded-xl text-white/70 text-[10px] font-black uppercase tracking-widest px-3 py-3 cursor-pointer disabled:opacity-40 focus:outline-none focus:border-white/30"
+                            title="Super admin payment mode control"
+                          >
+                            {PAYMENT_MODE_OPTIONS.map((opt) => (
+                              <option
+                                key={opt.key}
+                                value={opt.key}
+                                className="bg-[#111111] text-white"
+                              >
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
                           <button
                             onClick={() => handleExpand(r.restaurantId)}
                             className="p-3 bg-white/5 hover:bg-white/10 rounded-xl text-white/50 hover:text-white transition-colors cursor-pointer border-none"

@@ -29,7 +29,6 @@ const ProfileTab = () => {
     stat2Label: profile?.stat2Label || "Happy Customers",
     stat3Value: profile?.stat3Value || "4.9★",
     stat3Label: profile?.stat3Label || "Rating",
-    paymentMode: profile?.paymentMode || "at_table",
   });
 
   const [saving, setSaving] = useState(false);
@@ -83,6 +82,22 @@ const ProfileTab = () => {
   const [showBankForm, setShowBankForm] = useState(false);
 
   const isConnected = !!profile?.paystackSubaccountCode;
+  const activePaymentMode =
+    profile?.paymentMode === "pay_online" || profile?.paymentMode === "online"
+      ? "pay_online"
+      : "at_table";
+  const paymentPreference =
+    profile?.paymentPreference === "pay_online" ||
+    profile?.paymentPreference === "online"
+      ? "pay_online"
+      : "at_table";
+  const paymentRequestMailto = `mailto:hello@servrr.com?subject=${encodeURIComponent(
+    `Payment mode change request for ${profile?.name || restaurantId}`,
+  )}&body=${encodeURIComponent(
+    `Restaurant: ${profile?.name || restaurantId}\nRestaurant ID: ${restaurantId}\nCurrent payment mode: ${
+      activePaymentMode === "pay_online" ? "Pay Online" : "Pay at Table"
+    }\nRequested payment mode:\nReason:`,
+  )}`;
 
   const handleVerifyAccount = async () => {
     if (!bankForm.bankCode || bankForm.accountNumber.length < 10) {
@@ -358,64 +373,51 @@ const ProfileTab = () => {
       <div className="bg-[#111111] border border-white/5 p-6">
         <h3 className="text-white font-bold text-sm mb-1">Payment Settings</h3>
         <p className="text-white/30 text-xs mb-5">
-          Choose how customers pay for their orders.
+          Payment mode is controlled by SERVRR after signup. Send a request if
+          you need it changed.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-          {[
-            {
-              value: "at_table",
-              title: "Pay at Table",
-              desc: "Customers order first, staff collects payment in person.",
-            },
-            {
-              value: "pay_online",
-              title: "Pay Before Order",
-              desc: "Customers pay via Paystack before order is confirmed.",
-            },
-          ].map((opt) => {
-            const selected = form.paymentMode === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() =>
-                  setForm((p) => ({ ...p, paymentMode: opt.value }))
-                }
-                className="text-left p-4 border transition-all cursor-pointer bg-transparent"
-                style={{
-                  borderColor: selected ? `${accent}60` : "rgba(255,255,255,0.08)",
-                  background: selected ? `${accent}10` : "transparent",
-                }}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <div
-                    className="w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0"
-                    style={{
-                      borderColor: selected ? accent : "rgba(255,255,255,0.2)",
-                    }}
-                  >
-                    {selected && (
-                      <div
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{ background: accent }}
-                      />
-                    )}
-                  </div>
-                  <span
-                    className="text-sm font-semibold"
-                    style={{ color: selected ? accent : "rgba(255,255,255,0.7)" }}
-                  >
-                    {opt.title}
-                  </span>
-                </div>
-                <p className="text-white/30 text-xs pl-5">{opt.desc}</p>
-              </button>
-            );
-          })}
+          <div
+            className="p-4 border"
+            style={{ borderColor: `${accent}33`, background: `${accent}0a` }}
+          >
+            <p className="text-white/30 text-[10px] uppercase tracking-widest mb-1">
+              Active Mode
+            </p>
+            <p className="text-white text-sm font-semibold">
+              {activePaymentMode === "pay_online"
+                ? "Pay Online"
+                : "Pay at Table"}
+            </p>
+          </div>
+          <div className="p-4 border border-white/10 bg-white/[0.03]">
+            <p className="text-white/30 text-[10px] uppercase tracking-widest mb-1">
+              Signup Preference
+            </p>
+            <p className="text-white/60 text-sm font-semibold">
+              {paymentPreference === "pay_online"
+                ? "Pay Online"
+                : "Pay at Table"}
+            </p>
+          </div>
         </div>
 
-        {form.paymentMode === "pay_online" && (
+        <div className="mb-5 flex items-center justify-between gap-4 border border-white/10 bg-[#1a1a1a] p-4">
+          <p className="text-white/35 text-xs leading-relaxed">
+            To change this setting, email SERVRR support. We will review and
+            update it from the super admin console.
+          </p>
+          <a
+            href={paymentRequestMailto}
+            className="text-white text-xs font-bold px-4 py-2 rounded-full no-underline flex-shrink-0"
+            style={{ background: accent }}
+          >
+            Request Change
+          </a>
+        </div>
+
+        {activePaymentMode === "pay_online" && (
           <div className="mt-2">
             <p className="text-white/40 text-xs mb-4">
               Connect your bank account so customers can pay online and funds are deposited directly into your account.
