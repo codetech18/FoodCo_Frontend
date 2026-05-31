@@ -2,19 +2,12 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   createUserWithEmailAndPassword,
+  deleteUser,
   sendEmailVerification,
 } from "firebase/auth";
-import {
-  doc,
-  setDoc,
-  serverTimestamp,
-  collection,
-  query,
-  where,
-  getDocs,
-  updateDoc,
-} from "firebase/firestore";
-import { auth, db } from "../firebase/config";
+import { auth } from "../firebase/config";
+
+const API_BASE = import.meta.env.VITE_BACKEND_URL || "https://foodco-backend.onrender.com";
 
 // ── Input helper ──────────────────────────────────────────────────────────────
 const Input = ({
@@ -61,7 +54,6 @@ const Signup = () => {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
-  const [inviteDocId, setInviteDocId] = useState(null); // stores Firestore doc ID of valid code
 
   const [formData, setFormData] = useState({
     inviteCode: "",
@@ -115,28 +107,6 @@ const Signup = () => {
     }
   };
 
-  // ── Validate invite code against Firestore ──────────────────────────────────
-  const validateInviteCode = async (code) => {
-    if (!code.trim()) return "An invite code is required to sign up.";
-    const snap = await getDocs(
-      query(
-        collection(db, "inviteCodes"),
-        where("code", "==", code.trim().toUpperCase()),
-        where("status", "==", "unused"),
-      ),
-    );
-    if (snap.empty) return "Invalid or already used invite code.";
-    const codeData = snap.docs[0].data();
-    if (codeData.expiresAt) {
-      const expiry = codeData.expiresAt.toDate
-        ? codeData.expiresAt.toDate()
-        : new Date(codeData.expiresAt);
-      if (new Date() > expiry) return "This invite code has expired.";
-    }
-    setInviteDocId(snap.docs[0].id); // save for marking used later
-    return null;
-  };
-
   // ── Step 1 → Step 2 ─────────────────────────────────────────────────────────
   const nextStep = async () => {
     setError("");
@@ -156,11 +126,6 @@ const Signup = () => {
 
     if (!formData.paymentMode)
       return setError("Please select a payment model for your restaurant.");
-
-    setLoading(true);
-    const codeError = await validateInviteCode(formData.inviteCode);
-    setLoading(false);
-    if (codeError) return setError(codeError);
 
     setStep(2);
   };
@@ -183,58 +148,41 @@ const Signup = () => {
         formData.password,
       );
 
-      // Send verification email
+      const idToken = await user.getIdToken();
+      const setupRes = await fetch(`${API_BASE}/complete-signup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          inviteCode: formData.inviteCode,
+          name: formData.name,
+          paymentMode: formData.paymentMode,
+          accentColor: formData.accentColor,
+          tagline: formData.tagline,
+          description: formData.description,
+          logoUrl: formData.logoUrl,
+          address: formData.address,
+          phone: formData.phone,
+          contactEmail: formData.contactEmail,
+          instagram: formData.instagram,
+          twitter: formData.twitter,
+        }),
+      });
+      const setupData = await setupRes.json();
+      if (!setupRes.ok || !setupData.success) {
+        try {
+          await deleteUser(user);
+        } catch {}
+        throw new Error(setupData.error || "Account setup failed.");
+      }
+
       try {
         await sendEmailVerification(user);
       } catch {}
 
-      // Sign out immediately to prevent unverified access
       await auth.signOut();
-
-      // Create user record
-      await setDoc(doc(db, "users", user.uid), {
-        restaurantId: slug,
-        email: formData.email,
-        role: "owner",
-        createdAt: serverTimestamp(),
-      });
-
-      // Set trial/subscription fields
-      const trialEndsAt = new Date();
-      trialEndsAt.setDate(trialEndsAt.getDate() + 7);
-
-      // Create restaurant workspace
-      await setDoc(doc(db, "restaurants", slug, "profile", "info"), {
-        restaurantId: slug,
-        ownerUid: user.uid,
-        name: formData.name,
-        email: formData.email,
-        accentColor: formData.accentColor || "#fa5631",
-        tagline: formData.tagline,
-        description: formData.description,
-        logoUrl: formData.logoUrl,
-        address: formData.address,
-        phone: formData.phone,
-        contactEmail: formData.contactEmail,
-        instagram: formData.instagram,
-        twitter: formData.twitter,
-        paymentPreference: formData.paymentMode,
-        paymentMode: formData.paymentMode,
-        paymentModeUpdatedAt: serverTimestamp(),
-        subscriptionStatus: "trial",
-        trialEndsAt,
-        subscriptionPaidUntil: null,
-        createdAt: serverTimestamp(),
-      });
-
-      // Mark invite code as used
-      if (inviteDocId) {
-        await updateDoc(doc(db, "inviteCodes", inviteDocId), {
-          status: "used",
-          usedBy: slug,
-          usedAt: serverTimestamp(),
-        });
-      }
 
       setStep(3);
     } catch (err) {

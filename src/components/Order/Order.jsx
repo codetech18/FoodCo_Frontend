@@ -26,6 +26,8 @@ import {
   clearSession,
 } from "../../utils/tableSession";
 
+const API_BASE = import.meta.env.VITE_BACKEND_URL || "https://foodco-backend.onrender.com";
+
 // ─── Success Modal ─────────────────────────────────────────────────────────────
 const SuccessModal = ({
   name,
@@ -335,6 +337,12 @@ const Order = () => {
     (s, { qty }) => s + qty,
     0,
   );
+  const getOrderItems = () =>
+    Object.entries(quantities).map(([name, { price, qty }]) => ({
+      name,
+      price: parseFloat(price),
+      qty,
+    }));
 
   // Open or retrieve a Firestore table session
   const getOrCreateSession = async (orderTotal) => {
@@ -382,11 +390,7 @@ const Order = () => {
   };
 
   const saveOrderToFirestore = async (paymentRef = null) => {
-    const items = Object.entries(quantities).map(([name, { price, qty }]) => ({
-      name,
-      price: parseFloat(price),
-      qty,
-    }));
+    const items = getOrderItems();
 
     const sid = await getOrCreateSession(totalValue);
 
@@ -523,25 +527,51 @@ const Order = () => {
         paymentSuccessRef.current = true;
         (async () => {
           try {
-            const verifyRes = await fetch(
-              "https://foodco-backend.onrender.com/verify-payment",
+            const finalizeRes = await fetch(
+              `${API_BASE}/finalize-online-payment`,
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ reference: response.reference }),
+                body: JSON.stringify({
+                  reference: response.reference,
+                  restaurantId,
+                  customerName: name,
+                  email,
+                  table: effectiveTable,
+                  allergies,
+                  items: getOrderItems(),
+                  total: totalValue,
+                  sessionId: activeSession?.firestoreId || sessionId || null,
+                }),
               },
             );
-            const verifyData = await verifyRes.json();
-            if (!verifyData.success) {
+            const finalizeData = await finalizeRes.json();
+            if (!finalizeRes.ok || !finalizeData.success) {
               window.alert(
-                "Payment verification failed. Please show this reference to staff: " +
+                (finalizeData.error || "Payment finalization failed.") +
+                  " Please show this reference to staff: " +
                   response.reference,
               );
               setSubmitting(false);
               isPayingRef.current = false;
               return;
             }
-            await saveOrderToFirestore(response.reference);
+            saveOrderId(finalizeData.orderId);
+            setOrderId(finalizeData.orderId);
+            setSessionId(finalizeData.sessionId || null);
+            updateSession({
+              firestoreId: finalizeData.sessionId || null,
+              status: "paid",
+              paymentStatus: "paid",
+              paymentRef: response.reference,
+            });
+            setSessionStatus("paid");
+            setConfirmedName(name);
+            setName("");
+            setEmail("");
+            setAllergies("");
+            clearOrder();
+            setShowModal(true);
           } catch (err) {
             console.error("Order save error:", err);
             window.alert(

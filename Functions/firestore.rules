@@ -1,0 +1,227 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return signedIn() && (
+        request.auth.uid == "vqjNAPsGMyUjVL7PMIg3cBNSQhS2" ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "superadmin"
+        )
+      );
+    }
+
+    function userExists() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function belongsToRestaurant(restaurantId) {
+      return userExists() && userData().restaurantId == restaurantId;
+    }
+
+    function hasRestaurantRole(restaurantId, roles) {
+      return belongsToRestaurant(restaurantId) && userData().role in roles;
+    }
+
+    function canManageRestaurant(restaurantId) {
+      return isSuperAdmin() || hasRestaurantRole(restaurantId, ["owner", "manager"]);
+    }
+
+    function canViewRestaurantOps(restaurantId) {
+      return isSuperAdmin() ||
+        hasRestaurantRole(restaurantId, ["owner", "manager", "kitchen", "bar", "waiter", "cashier"]);
+    }
+
+    function isValidPaymentMode(mode) {
+      return mode in ["at_table", "pay_online", "online"];
+    }
+
+    function isUnpaidOrderCreate() {
+      return request.resource.data.keys().hasOnly([
+          "customerName",
+          "email",
+          "table",
+          "allergies",
+          "items",
+          "total",
+          "status",
+          "createdAt",
+          "sessionId"
+        ])
+        && request.resource.data.customerName is string
+        && request.resource.data.table is string
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && request.resource.data.items.size() <= 100
+        && request.resource.data.total is number
+        && request.resource.data.total >= 0
+        && request.resource.data.status == "pending";
+    }
+
+    match /users/{userId} {
+      allow get: if isSuperAdmin() || (signedIn() && request.auth.uid == userId);
+      allow list: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /inviteCodes/{codeId} {
+      allow get, list, create, update, delete: if isSuperAdmin();
+    }
+
+    match /paymentReferences/{reference} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /restaurants/{restaurantId} {
+      allow read, write: if false;
+
+      match /profile/{profileId} {
+        allow get, list: if true;
+        allow create, delete: if isSuperAdmin();
+
+        allow update: if isSuperAdmin() ||
+          (
+            canManageRestaurant(restaurantId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              "dealTitle",
+              "dealItem",
+              "dealFreeItem",
+              "dealDesc",
+              "dealBadge",
+              "dealTag",
+              "stat1Value",
+              "stat1Label",
+              "stat2Value",
+              "stat2Label",
+              "stat3Value",
+              "stat3Label",
+              "paystackSubaccountCode",
+              "bankName",
+              "accountName",
+              "accountNumberLast4",
+              "updatedAt"
+            ])
+          );
+      }
+
+      match /menu/{itemId} {
+        allow get, list: if true;
+
+        allow create: if canManageRestaurant(restaurantId)
+          && request.resource.data.keys().hasOnly([
+            "name",
+            "price",
+            "description",
+            "category",
+            "station",
+            "imageUrl",
+            "available",
+            "createdAt"
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.price is number
+          && request.resource.data.category is string
+          && request.resource.data.available is bool;
+
+        allow update: if canManageRestaurant(restaurantId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "name",
+            "price",
+            "description",
+            "category",
+            "station",
+            "imageUrl",
+            "available",
+            "updatedAt"
+          ]);
+
+        allow delete: if canManageRestaurant(restaurantId);
+      }
+
+      match /orders/{orderId} {
+        allow get: if true;
+        allow list: if canViewRestaurantOps(restaurantId);
+
+        allow create: if isUnpaidOrderCreate();
+
+        allow update: if isSuperAdmin() ||
+          (
+            canViewRestaurantOps(restaurantId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status"])
+            && request.resource.data.status in ["pending", "in_progress", "ready", "completed"]
+          ) ||
+          (
+            resource.data.status == "pending"
+            && resource.data.paymentStatus != "paid"
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["items", "total"])
+            && request.resource.data.items is list
+            && request.resource.data.items.size() > 0
+            && request.resource.data.total is number
+            && request.resource.data.total >= 0
+          );
+
+        allow delete: if canManageRestaurant(restaurantId);
+      }
+
+      match /tableSessions/{sessionId} {
+        allow get: if true;
+        allow list: if canViewRestaurantOps(restaurantId);
+
+        allow create: if request.resource.data.keys().hasOnly([
+            "table",
+            "status",
+            "openedAt",
+            "totalBill",
+            "orderIds",
+            "paymentMode"
+          ])
+          && request.resource.data.table is string
+          && request.resource.data.status == "open"
+          && request.resource.data.totalBill is number
+          && request.resource.data.totalBill >= 0
+          && request.resource.data.orderIds is list
+          && isValidPaymentMode(request.resource.data.paymentMode);
+
+        allow update: if isSuperAdmin() ||
+          canViewRestaurantOps(restaurantId) ||
+          (
+            resource.data.status == "open"
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              "totalBill",
+              "updatedAt",
+              "orderIds",
+              "status",
+              "billRequestedAt"
+            ])
+            && request.resource.data.status in ["open", "awaiting_payment"]
+            && request.resource.data.totalBill >= resource.data.totalBill
+          );
+
+        allow delete: if isSuperAdmin();
+      }
+
+      match /billing/{billingId} {
+        allow get, list: if canManageRestaurant(restaurantId);
+        allow create, update, delete: if isSuperAdmin();
+      }
+
+      match /{document=**} {
+        allow read, write: if isSuperAdmin();
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
