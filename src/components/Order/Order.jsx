@@ -264,6 +264,7 @@ const Order = () => {
     tableSessionLocal?.status || "open",
   );
   const [paymentError, setPaymentError] = useState(null);
+  const [pendingPaidOrder, setPendingPaidOrder] = useState(null);
   const [monthOrderCount, setMonthOrderCount] = useState(null);
   const paymentSuccessRef = useRef(false);
   const paymentTimeoutRef = useRef(null);
@@ -343,6 +344,62 @@ const Order = () => {
       price: parseFloat(price),
       qty,
     }));
+
+  const finalizePaidOrder = async (payload) => {
+    const finalizeRes = await fetch(`${API_BASE}/finalize-online-payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const responseText = await finalizeRes.text();
+    let finalizeData = {};
+    try {
+      finalizeData = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      throw new Error(
+        `Payment finalization returned an invalid response (${finalizeRes.status}).`,
+      );
+    }
+
+    if (!finalizeRes.ok || !finalizeData.success) {
+      throw new Error(finalizeData.error || "Payment finalization failed.");
+    }
+
+    saveOrderId(finalizeData.orderId);
+    setOrderId(finalizeData.orderId);
+    setSessionId(finalizeData.sessionId || null);
+    updateSession({
+      firestoreId: finalizeData.sessionId || null,
+      status: "paid",
+      paymentStatus: "paid",
+      paymentRef: payload.reference,
+    });
+    setSessionStatus("paid");
+    setConfirmedName(payload.customerName);
+    setName("");
+    setEmail("");
+    setAllergies("");
+    setPendingPaidOrder(null);
+    setPaymentError(null);
+    clearOrder();
+    setShowModal(true);
+  };
+
+  const retryPaidOrderSave = async () => {
+    if (!pendingPaidOrder || submitting) return;
+    setSubmitting(true);
+    setPaymentError(null);
+    try {
+      await finalizePaidOrder(pendingPaidOrder);
+    } catch (err) {
+      console.error("Paid order retry failed:", err);
+      setPaymentError(
+        `Payment received, but the order still could not be saved: ${err.message}. Reference: ${pendingPaidOrder.reference}`,
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // Open or retrieve a Firestore table session
   const getOrCreateSession = async (orderTotal) => {
@@ -526,57 +583,24 @@ const Order = () => {
         clearTimeout(paymentTimeoutRef.current);
         paymentSuccessRef.current = true;
         (async () => {
+          const paidOrderPayload = {
+            reference: response.reference,
+            restaurantId,
+            customerName: name,
+            email,
+            table: effectiveTable,
+            allergies,
+            items: getOrderItems(),
+            total: totalValue,
+            sessionId: activeSession?.firestoreId || sessionId || null,
+          };
           try {
-            const finalizeRes = await fetch(
-              `${API_BASE}/finalize-online-payment`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  reference: response.reference,
-                  restaurantId,
-                  customerName: name,
-                  email,
-                  table: effectiveTable,
-                  allergies,
-                  items: getOrderItems(),
-                  total: totalValue,
-                  sessionId: activeSession?.firestoreId || sessionId || null,
-                }),
-              },
-            );
-            const finalizeData = await finalizeRes.json();
-            if (!finalizeRes.ok || !finalizeData.success) {
-              window.alert(
-                (finalizeData.error || "Payment finalization failed.") +
-                  " Please show this reference to staff: " +
-                  response.reference,
-              );
-              setSubmitting(false);
-              isPayingRef.current = false;
-              return;
-            }
-            saveOrderId(finalizeData.orderId);
-            setOrderId(finalizeData.orderId);
-            setSessionId(finalizeData.sessionId || null);
-            updateSession({
-              firestoreId: finalizeData.sessionId || null,
-              status: "paid",
-              paymentStatus: "paid",
-              paymentRef: response.reference,
-            });
-            setSessionStatus("paid");
-            setConfirmedName(name);
-            setName("");
-            setEmail("");
-            setAllergies("");
-            clearOrder();
-            setShowModal(true);
+            await finalizePaidOrder(paidOrderPayload);
           } catch (err) {
             console.error("Order save error:", err);
-            window.alert(
-              "Payment received but order failed to save. Please show your payment reference to staff: " +
-                response.reference,
+            setPendingPaidOrder(paidOrderPayload);
+            setPaymentError(
+              `Payment received, but the order failed to save: ${err.message}. Reference: ${response.reference}`,
             );
           } finally {
             setSubmitting(false);
@@ -1026,8 +1050,18 @@ const Order = () => {
                 )}
 
                 {paymentError && (
-                  <div className="p-3 border border-red-500/30 bg-red-500/10 text-red-400 text-sm">
-                    {paymentError}
+                  <div className="p-3 border border-red-500/30 bg-red-500/10 text-red-400 text-sm space-y-3">
+                    <p>{paymentError}</p>
+                    {pendingPaidOrder && (
+                      <button
+                        type="button"
+                        onClick={retryPaidOrderSave}
+                        disabled={submitting}
+                        className="px-3 py-2 text-xs font-bold text-white bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 disabled:opacity-60 transition-colors"
+                      >
+                        Retry saving paid order
+                      </button>
+                    )}
                   </div>
                 )}
 

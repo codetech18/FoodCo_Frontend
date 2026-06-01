@@ -692,6 +692,7 @@ const OrdersTab = () => {
   const [orders, setOrders] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [view, setView] = useState("tables"); // "tables" | "orders"
   const [filter, setFilter] = useState("pending");
   const [newOrderIds, setNewOrderIds] = useState(new Set());
@@ -737,42 +738,82 @@ const OrdersTab = () => {
 
   // Listen to orders
   useEffect(() => {
+    if (!restaurantId) return undefined;
+
+    setLoading(true);
+    setLoadError("");
+    isFirstLoad.current = true;
+
     const q = query(
       collection(db, "restaurants", restaurantId, "orders"),
       orderBy("createdAt", "desc"),
     );
-    return onSnapshot(q, (snap) => {
-      const incoming = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      if (!isFirstLoad.current) {
-        const newItems = incoming.filter(
-          (o) => !prevOrderIds.current.has(o.id),
-        );
-        if (newItems.length > 0) {
-          playSound();
-          setToasts((prev) => [
-            ...prev,
-            ...newItems.map((o) => ({ ...o, _toastId: o.id })),
-          ]);
-          setNewOrderIds(new Set(newItems.map((o) => o.id)));
-          setTimeout(() => setNewOrderIds(new Set()), 4000);
+
+    return onSnapshot(
+      q,
+      (snap) => {
+        const incoming = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (!isFirstLoad.current) {
+          const newItems = incoming.filter(
+            (o) => !prevOrderIds.current.has(o.id),
+          );
+          if (newItems.length > 0) {
+            playSound();
+            setToasts((prev) => [
+              ...prev,
+              ...newItems.map((o) => ({ ...o, _toastId: o.id })),
+            ]);
+            setNewOrderIds(new Set(newItems.map((o) => o.id)));
+            setTimeout(() => setNewOrderIds(new Set()), 4000);
+          }
         }
-      }
-      prevOrderIds.current = new Set(incoming.map((o) => o.id));
-      setOrders(incoming);
-      setLoading(false);
-      isFirstLoad.current = false;
-    });
+        prevOrderIds.current = new Set(incoming.map((o) => o.id));
+        setOrders(incoming);
+        setLoadError("");
+        setLoading(false);
+        isFirstLoad.current = false;
+      },
+      (error) => {
+        console.error("Orders listener failed:", error);
+        const message =
+          error.code === "permission-denied"
+            ? "You do not have permission to view orders for this restaurant. Check that this admin user has the correct role and restaurantId."
+            : error.code === "unavailable"
+              ? "Could not connect to Firestore. Check your internet connection, VPN, firewall, or browser offline mode."
+              : error.message || "Could not load orders. Please try again.";
+
+        setLoadError(message);
+        setLoading(false);
+      },
+    );
   }, [restaurantId]);
 
   // Listen to table sessions
   useEffect(() => {
+    if (!restaurantId) return undefined;
+
     const q = query(
       collection(db, "restaurants", restaurantId, "tableSessions"),
       orderBy("openedAt", "desc"),
     );
-    return onSnapshot(q, (snap) => {
-      setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (error) => {
+        console.error("Table sessions listener failed:", error);
+        setLoadError((current) =>
+          current ||
+          (
+            error.code === "permission-denied"
+              ? "You do not have permission to view table sessions for this restaurant."
+              : error.message || "Could not load table sessions. Please try again."
+          ),
+        );
+        setLoading(false);
+      },
+    );
   }, [restaurantId]);
 
   const updateStatus = async (id, nextStatus) => {
@@ -845,6 +886,23 @@ const OrdersTab = () => {
           className="w-8 h-8 border-2 border-white/10 rounded-full animate-spin"
           style={{ borderTopColor: accent }}
         />
+      </div>
+    );
+
+  if (loadError)
+    return (
+      <div className="py-24">
+        <div className="max-w-xl mx-auto border border-red-500/20 bg-red-500/10 px-6 py-5 text-center">
+          <p className="text-sm font-semibold text-red-200">Orders could not load</p>
+          <p className="mt-2 text-xs leading-6 text-white/50">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-5 px-4 py-2 text-xs font-semibold text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
 

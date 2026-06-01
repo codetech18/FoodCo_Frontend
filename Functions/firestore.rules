@@ -33,13 +33,22 @@ service cloud.firestore {
       return belongsToRestaurant(restaurantId) && userData().role in roles;
     }
 
+    function ownsRestaurantProfile(restaurantId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/restaurants/$(restaurantId)/profile/info) &&
+        get(/databases/$(database)/documents/restaurants/$(restaurantId)/profile/info).data.ownerUid == request.auth.uid;
+    }
+
     function canManageRestaurant(restaurantId) {
-      return isSuperAdmin() || hasRestaurantRole(restaurantId, ["owner", "manager"]);
+      return isSuperAdmin() ||
+        ownsRestaurantProfile(restaurantId) ||
+        hasRestaurantRole(restaurantId, ["owner", "manager", "admin"]);
     }
 
     function canViewRestaurantOps(restaurantId) {
       return isSuperAdmin() ||
-        hasRestaurantRole(restaurantId, ["owner", "manager", "kitchen", "bar", "waiter", "cashier"]);
+        ownsRestaurantProfile(restaurantId) ||
+        hasRestaurantRole(restaurantId, ["owner", "manager", "admin", "kitchen", "bar", "waiter", "cashier"]);
     }
 
     function isValidPaymentMode(mode) {
