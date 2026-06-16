@@ -1,34 +1,28 @@
 // ── Table Session Utility ─────────────────────────────────────────────────────
-// Manages the active table session in localStorage
-// A session links multiple orders from the same table together
+// Tracks the active table session for this browser tab in sessionStorage.
+// Tab-scoped (not localStorage) so two tabs/devices never share a session id
+// by accident. The session doc itself (status/total/etc.) always comes live
+// from Firestore — this only remembers which session this tab belongs to.
 
-const SESSION_KEY = "servrr_table_session";
+const SESSION_KEY = "servrr_active_session";
 
-export const saveSession = (session) => {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+export const saveActiveSession = (restaurantId, table, sessionId) => {
+  sessionStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({ restaurantId, table, sessionId })
+  );
 };
 
-export const getSession = (restaurantId) => {
+export const getActiveSession = (restaurantId) => {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
+    const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw);
     if (s.restaurantId !== restaurantId) return null;
-    if (s.status === "closed" || s.status === "paid") {
-      localStorage.removeItem(SESSION_KEY);
-      return null;
-    }
-    return s;
-  } catch { return null; }
+    return { table: s.table, sessionId: s.sessionId };
+  } catch {
+    return null;
+  }
 };
 
-export const clearSession = () => localStorage.removeItem(SESSION_KEY);
-
-export const updateSession = (updates) => {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return;
-    const s = JSON.parse(raw);
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ ...s, ...updates }));
-  } catch {}
-};
+export const clearActiveSession = () => sessionStorage.removeItem(SESSION_KEY);

@@ -18,13 +18,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useOrder } from "../../Context2";
 import { saveOrderId } from "../../utils/orderCache";
 import { useRestaurant } from "../../context/RestaurantContext";
-import { getTableSession } from "../../utils/tableToken";
-import {
-  getSession,
-  saveSession,
-  updateSession,
-  clearSession,
-} from "../../utils/tableSession";
+import { getActiveSession, clearActiveSession } from "../../utils/tableSession";
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || "https://foodco-backend.onrender.com";
 
@@ -226,43 +220,25 @@ const Order = () => {
     document.body.appendChild(script);
   }, []);
 
-  const tableToken =
-    getTableSession(restaurantId) || (isDebugBypass ? { table: "99" } : null);
-  const tableSessionLocal = getSession(restaurantId);
-
-  const isNewTable =
-    tableToken &&
-    tableSessionLocal &&
-    tableToken.table !== tableSessionLocal.table;
-  const activeSession = isNewTable ? null : tableSessionLocal;
-  const activeSessionId = activeSession?.firestoreId || null;
+  const activeSession =
+    getActiveSession(restaurantId) ||
+    (isDebugBypass ? { table: "99", sessionId: null } : null);
+  const activeSessionId = activeSession?.sessionId || null;
 
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [allergies, setAllergies] = useState("");
   const [table, setTable] = useState(
-    tableToken?.table ||
-      activeSession?.table ||
-      searchParams.get("table") ||
-      "",
+    activeSession?.table || searchParams.get("table") || "",
   );
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmedName, setConfirmedName] = useState("");
   const [orderId, setOrderId] = useState(null);
-  const [sessionId, setSessionId] = useState(
-    activeSession?.firestoreId || null,
-  );
-  const [sessionTotal, setSessionTotal] = useState(
-    activeSession?.totalBill || 0,
-  );
-  const [billRequested, setBillRequested] = useState(
-    activeSession?.status === "awaiting_payment",
-  );
-  const [sessionStatus, setSessionStatus] = useState(
-    tableSessionLocal?.status || "open",
-  );
+  const [sessionTotal, setSessionTotal] = useState(0);
+  const [billRequested, setBillRequested] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState("open");
   const [paymentError, setPaymentError] = useState(null);
   const [pendingPaidOrder, setPendingPaidOrder] = useState(null);
   const [monthOrderCount, setMonthOrderCount] = useState(null);
@@ -287,38 +263,26 @@ const Order = () => {
       .catch(() => {});
   }, [restaurantId, profile?.plan]);
 
-  // Reset session state when a fresh QR scan is detected
-  useEffect(() => {
-    if (isNewTable) clearSession();
-    if ((!tableSessionLocal && tableToken) || isNewTable) {
-      setSessionStatus("open");
-      setSessionId(null);
-      setSessionTotal(0);
-      setBillRequested(false);
-    }
-  }, [tableSessionLocal, tableToken, isNewTable]);
-
   // Live listener on the Firestore session
   useEffect(() => {
-    const sid = activeSessionId || sessionId;
-    if (!sid || !restaurantId) return;
+    if (!activeSessionId || !restaurantId) return;
     const unsub = onSnapshot(
-      doc(db, "restaurants", restaurantId, "tableSessions", sid),
+      doc(db, "restaurants", restaurantId, "tableSessions", activeSessionId),
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data();
         setSessionStatus(data.status);
         setSessionTotal(data.totalBill || 0);
         if (data.status === "awaiting_payment") setBillRequested(true);
-        if (data.status === "paid" || data.status === "closed") {
-          clearSession();
+        if (data.status === "paid") {
+          clearActiveSession();
           setBillRequested(false);
           setSessionStatus(data.status);
         }
       },
     );
     return unsub;
-  }, [sessionId, restaurantId, activeSessionId]);
+  }, [activeSessionId, restaurantId]);
 
   const navigate = useNavigate();
   const { orderItem, quantities, clearOrder } = useOrder();
@@ -367,14 +331,6 @@ const Order = () => {
 
     saveOrderId(finalizeData.orderId);
     setOrderId(finalizeData.orderId);
-    setSessionId(finalizeData.sessionId || null);
-    updateSession({
-      firestoreId: finalizeData.sessionId || null,
-      status: "paid",
-      paymentStatus: "paid",
-      paymentRef: payload.reference,
-    });
-    setSessionStatus("paid");
     setConfirmedName(payload.customerName);
     setName("");
     setEmail("");
@@ -401,71 +357,21 @@ const Order = () => {
     }
   };
 
-  // Open or retrieve a Firestore table session
-  const getOrCreateSession = async (orderTotal) => {
-    if (activeSession?.firestoreId) {
-      const newTotal = (activeSession.totalBill || 0) + orderTotal;
-      await updateDoc(
-        doc(
-          db,
-          "restaurants",
-          restaurantId,
-          "tableSessions",
-          activeSession.firestoreId,
-        ),
-        { totalBill: newTotal, updatedAt: serverTimestamp() },
-      );
-      updateSession({ totalBill: newTotal });
-      setSessionTotal(newTotal);
-      return activeSession.firestoreId;
-    }
-
-    const sessionRef = await addDoc(
-      collection(db, "restaurants", restaurantId, "tableSessions"),
-      {
-        table: isDebugBypass ? tableToken?.table || "99" : table,
-        status: "open",
-        openedAt: serverTimestamp(),
-        totalBill: orderTotal,
-        orderIds: [],
-        paymentMode,
-      },
-    );
-
-    const localSession = {
-      restaurantId,
-      firestoreId: sessionRef.id,
-      table: isDebugBypass ? tableToken?.table || "99" : table,
-      status: "open",
-      totalBill: orderTotal,
-      paymentMode,
-    };
-    saveSession(localSession);
-    setSessionId(sessionRef.id);
-    setSessionTotal(orderTotal);
-    return sessionRef.id;
-  };
-
-  const saveOrderToFirestore = async (paymentRef = null) => {
+  const saveOrderToFirestore = async () => {
     const items = getOrderItems();
-
-    const sid = await getOrCreateSession(totalValue);
+    const sid = activeSession?.sessionId;
 
     const orderData = {
       customerName: name,
       email,
-      table: isDebugBypass ? tableToken?.table || "99" : table,
+      table: isDebugBypass ? activeSession?.table || "99" : table,
       allergies,
       items,
       total: totalValue,
       status: "pending",
       createdAt: serverTimestamp(),
+      sessionId: sid,
     };
-    if (sid) orderData.sessionId = sid;
-    if (paymentRef) {
-      orderData.paymentStatus = "paid";
-      orderData.paymentRef = paymentRef;
-    }
 
     const docRef = await addDoc(
       collection(db, "restaurants", restaurantId, "orders"),
@@ -479,25 +385,17 @@ const Order = () => {
       const existingIds = sessionDoc.exists()
         ? sessionDoc.data().orderIds || []
         : [];
-      await updateDoc(
-        doc(db, "restaurants", restaurantId, "tableSessions", sid),
-        { orderIds: [...existingIds, docRef.id] },
-      );
-    }
-
-    if (paymentRef && sid) {
+      const existingTotal = sessionDoc.exists()
+        ? sessionDoc.data().totalBill || 0
+        : 0;
       await updateDoc(
         doc(db, "restaurants", restaurantId, "tableSessions", sid),
         {
-          status: "paid",
-          paidAt: serverTimestamp(),
-          closedAt: serverTimestamp(),
-          paymentStatus: "paid",
-          paymentRef,
+          orderIds: [...existingIds, docRef.id],
+          totalBill: existingTotal + totalValue,
+          updatedAt: serverTimestamp(),
         },
       );
-      updateSession({ status: "paid", paymentStatus: "paid", paymentRef });
-      setSessionStatus("paid");
     }
 
     saveOrderId(docRef.id);
@@ -517,7 +415,9 @@ const Order = () => {
     if (!allergies)
       return window.alert("Please enter allergies or type 'none'.");
 
-    const effectiveTable = isDebugBypass ? tableToken?.table || "99" : table;
+    const effectiveTable = isDebugBypass
+      ? activeSession?.table || "99"
+      : table;
     if (!effectiveTable) return window.alert("Please enter your table number.");
     if (orderItem.length === 0)
       return window.alert("Please add items to your order first.");
@@ -592,7 +492,7 @@ const Order = () => {
             allergies,
             items: getOrderItems(),
             total: totalValue,
-            sessionId: activeSession?.firestoreId || sessionId || null,
+            sessionId: activeSession?.sessionId || null,
           };
           try {
             await finalizePaidOrder(paidOrderPayload);
@@ -662,8 +562,8 @@ const Order = () => {
   const labelCls =
     "block text-white/40 text-xs font-semibold tracking-widest uppercase mb-2";
 
-  // ─── TABLE TOKEN CHECK WITH DEBUG BYPASS ────────────────────────────────────
-  if (!tableToken && !isDebugBypass) {
+  // ─── ACTIVE SESSION CHECK WITH DEBUG BYPASS ─────────────────────────────────
+  if (!activeSession) {
     return (
       <section
         id="Order"
@@ -707,12 +607,11 @@ const Order = () => {
     );
   }
 
-  // Staff marked as paid/closed
-  if ((sessionStatus === "paid" || sessionStatus === "closed") && !showModal) {
+  // Staff marked the session as paid (the only terminal session status)
+  if (sessionStatus === "paid" && !showModal) {
     const handleNewOrder = () => {
-      clearSession();
+      clearActiveSession();
       setSessionStatus("open");
-      setSessionId(null);
       setSessionTotal(0);
       setBillRequested(false);
     };
@@ -744,45 +643,39 @@ const Order = () => {
               </svg>
             </div>
             <h2 className="font-display text-2xl font-black text-white mb-3">
-              {sessionStatus === "paid"
-                ? "Payment Confirmed! 🎉"
-                : "Session Closed"}
+              Payment Confirmed! 🎉
             </h2>
             <p className="text-white/40 text-sm leading-relaxed mb-2">
-              {sessionStatus === "paid"
-                ? "Your payment has been received. Thank you for dining with us!"
-                : "Your table session has been closed by staff."}
+              Your payment has been received. Thank you for dining with us!
             </p>
             <p className="text-white/20 text-sm mb-8">
               We hope to see you again soon. 🙏
             </p>
 
-            {tableToken && (
-              <button
-                onClick={handleNewOrder}
-                className="inline-flex items-center gap-2 text-white font-semibold px-6 py-3 rounded-full border transition-all cursor-pointer bg-transparent"
-                style={{ borderColor: `${accent}60`, color: accent }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = accent;
-                  e.currentTarget.style.color = "white";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                  e.currentTarget.style.color = accent;
-                }}
+            <button
+              onClick={handleNewOrder}
+              className="inline-flex items-center gap-2 text-white font-semibold px-6 py-3 rounded-full border transition-all cursor-pointer bg-transparent"
+              style={{ borderColor: `${accent}60`, color: accent }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = accent;
+                e.currentTarget.style.color = "white";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.color = accent;
+              }}
+            >
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
               >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-                </svg>
-                Start a New Order
-              </button>
-            )}
+                <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+              </svg>
+              Start a New Order
+            </button>
           </div>
         </div>
       </section>
@@ -804,8 +697,10 @@ const Order = () => {
   }
 
   // ─── MAIN ORDER FORM ──────────────────────────────────────────────────────
-  const effectiveTableValue = isDebugBypass ? tableToken?.table || "99" : table;
-  const showTableReadOnly = isDebugBypass || !!tableToken?.table;
+  const effectiveTableValue = isDebugBypass
+    ? activeSession?.table || "99"
+    : table;
+  const showTableReadOnly = isDebugBypass || !!activeSession?.table;
 
   return (
     <>
@@ -848,7 +743,7 @@ const Order = () => {
             <div>
               {/* Session status bar */}
               <div className="flex items-center gap-3 flex-wrap mb-5">
-                {(tableToken?.table || isDebugBypass) && (
+                {(activeSession?.table || isDebugBypass) && (
                   <div
                     className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border"
                     style={{

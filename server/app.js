@@ -5,10 +5,21 @@ const crypto = require("crypto");
 const { Resend } = require("resend");
 const admin = require("firebase-admin");
 
+//admin.initializeApp({
+//  credential: admin.credential.cert(
+//    JSON.parse(
+//      (process.env.FIREBASE_SERVICE_ACCOUNT || "").replace(/\\n/g, "\n"),
+//    ),
+//  ),
+//});
+
+let firebaseConfig = process.env.FIREBASE_SERVICE_ACCOUNT || "";
+
+// Remove all whitespace newlines and tabs, but preserve \n as literal characters
+firebaseConfig = firebaseConfig.replace(/\s+/g, " ").trim();
+
 admin.initializeApp({
-  credential: admin.credential.cert(
-    JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT),
-  ),
+  credential: admin.credential.cert(JSON.parse(firebaseConfig)),
 });
 
 const app = express();
@@ -39,7 +50,8 @@ const slugify = (name) =>
 
 const isExpiredTimestamp = (value) => {
   if (!value) return false;
-  const expiry = typeof value.toDate === "function" ? value.toDate() : new Date(value);
+  const expiry =
+    typeof value.toDate === "function" ? value.toDate() : new Date(value);
   return Number.isFinite(expiry.getTime()) && new Date() > expiry;
 };
 
@@ -55,6 +67,23 @@ const requireFirebaseUser = async (req, res, next) => {
     console.error("Auth token verification failed:", err);
     return res.status(401).json({ error: "Invalid auth token" });
   }
+};
+
+// Mirrors isSuperAdmin/ownsRestaurantProfile/hasRestaurantRole in Functions/firestore.rules —
+// Admin SDK calls bypass rules, so staff-only routes re-check the same access model here.
+const SUPER_ADMIN_UID = "vqjNAPsGMyUjVL7PMIg3cBNSQhS2";
+const OPS_ROLES = ["owner", "manager", "admin", "kitchen", "bar", "waiter", "cashier"];
+
+const userCanOperate = async (uid, restaurantId) => {
+  if (uid === SUPER_ADMIN_UID) return true;
+
+  const profileSnap = await db.doc(`restaurants/${restaurantId}/profile/info`).get();
+  if (profileSnap.exists && profileSnap.data().ownerUid === uid) return true;
+
+  const userSnap = await db.doc(`users/${uid}`).get();
+  if (!userSnap.exists) return false;
+  const userData = userSnap.data();
+  return userData.restaurantId === restaurantId && OPS_ROLES.includes(userData.role);
 };
 
 const validateOrderItems = (items) => {
@@ -119,10 +148,14 @@ app.post("/complete-signup", requireFirebaseUser, async (req, res) => {
   const selectedPaymentMode = normalizePaymentMode(paymentMode);
 
   if (!inviteCode || !name || !restaurantId || !email) {
-    return res.status(400).json({ error: "Invite code, restaurant name, and email are required." });
+    return res
+      .status(400)
+      .json({ error: "Invite code, restaurant name, and email are required." });
   }
   if (!address || !phone || !contactEmail) {
-    return res.status(400).json({ error: "Address, phone, and contact email are required." });
+    return res
+      .status(400)
+      .json({ error: "Address, phone, and contact email are required." });
   }
 
   try {
@@ -142,19 +175,31 @@ app.post("/complete-signup", requireFirebaseUser, async (req, res) => {
       ]);
 
       if (userSnap.exists) {
-        throw Object.assign(new Error("This user already has a restaurant workspace."), { statusCode: 409 });
+        throw Object.assign(
+          new Error("This user already has a restaurant workspace."),
+          { statusCode: 409 },
+        );
       }
       if (profileSnap.exists) {
-        throw Object.assign(new Error("This restaurant URL is already taken. Please adjust the name."), { statusCode: 409 });
+        throw Object.assign(
+          new Error(
+            "This restaurant URL is already taken. Please adjust the name.",
+          ),
+          { statusCode: 409 },
+        );
       }
       if (inviteSnap.empty) {
-        throw Object.assign(new Error("Invalid or already used invite code."), { statusCode: 400 });
+        throw Object.assign(new Error("Invalid or already used invite code."), {
+          statusCode: 400,
+        });
       }
 
       const inviteDoc = inviteSnap.docs[0];
       const inviteData = inviteDoc.data();
       if (isExpiredTimestamp(inviteData.expiresAt)) {
-        throw Object.assign(new Error("This invite code has expired."), { statusCode: 400 });
+        throw Object.assign(new Error("This invite code has expired."), {
+          statusCode: 400,
+        });
       }
 
       const trialEndsAt = new Date();
@@ -200,6 +245,7 @@ app.post("/complete-signup", requireFirebaseUser, async (req, res) => {
       return { restaurantId };
     });
 
+    // Fire welcome email — non-blocking
     return res.json({ success: true, ...result });
   } catch (err) {
     console.error("Complete signup error:", err);
@@ -363,6 +409,237 @@ app.post("/paystack-webhook", async (req, res) => {
   return res.sendStatus(200);
 });
 
+// GET /table-token — mint (or fetch) the permanent per-table QR secret (staff only)
+app.get("/table-token", requireFirebaseUser, async (req, res) => {
+  const restaurantId = String(req.query.restaurantId || "").trim();
+  const table = String(req.query.table || "").trim();
+  if (!restaurantId || !table) {
+    return res.status(400).json({ error: "restaurantId and table are required" });
+  }
+
+  try {
+    if (!(await userCanOperate(req.firebaseUser.uid, restaurantId))) {
+      return res.status(403).json({ error: "Not authorized for this restaurant" });
+    }
+
+    const token = await db.runTransaction(async (tx) => {
+      const tableRef = db.doc(`restaurants/${restaurantId}/tables/${table}`);
+      const tableSnap = await tx.get(tableRef);
+      if (tableSnap.exists && tableSnap.data().token) {
+        return tableSnap.data().token;
+      }
+
+      const newToken = crypto.randomBytes(16).toString("hex");
+      tx.set(
+        tableRef,
+        {
+          token: newToken,
+          currentSessionId: tableSnap.exists ? tableSnap.data().currentSessionId ?? null : null,
+          createdAt: tableSnap.exists ? tableSnap.data().createdAt : FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      return newToken;
+    });
+
+    return res.json({ token });
+  } catch (err) {
+    console.error("Table token error:", err);
+    return res.status(500).json({ error: "Could not fetch table token." });
+  }
+});
+
+// POST /open-table-session — validate the permanent QR token and open/rejoin a session (public, QR scan)
+app.post("/open-table-session", async (req, res) => {
+  const restaurantId = String(req.body?.restaurantId || "").trim();
+  const table = String(req.body?.table || "").trim();
+  const token = String(req.body?.token || "").trim();
+  if (!restaurantId || !table || !token) {
+    return res.status(400).json({ error: "restaurantId, table, and token are required" });
+  }
+
+  try {
+    const sessionId = await db.runTransaction(async (tx) => {
+      const tableRef = db.doc(`restaurants/${restaurantId}/tables/${table}`);
+      const tableSnap = await tx.get(tableRef);
+      if (!tableSnap.exists || tableSnap.data().token !== token) {
+        throw Object.assign(new Error("Invalid table QR code."), { statusCode: 403 });
+      }
+
+      const currentSessionId = tableSnap.data().currentSessionId || null;
+      if (currentSessionId) {
+        const sessionRef = db.doc(
+          `restaurants/${restaurantId}/tableSessions/${currentSessionId}`,
+        );
+        const sessionSnap = await tx.get(sessionRef);
+        if (
+          sessionSnap.exists &&
+          ["open", "awaiting_payment"].includes(sessionSnap.data().status)
+        ) {
+          return currentSessionId;
+        }
+      }
+
+      const profileSnap = await tx.get(db.doc(`restaurants/${restaurantId}/profile/info`));
+      const paymentMode = normalizePaymentMode(profileSnap.data()?.paymentMode);
+
+      const newSessionRef = db
+        .collection(`restaurants/${restaurantId}/tableSessions`)
+        .doc();
+      tx.set(newSessionRef, {
+        table,
+        status: "open",
+        openedAt: FieldValue.serverTimestamp(),
+        billRequestedAt: null,
+        closedAt: null,
+        totalBill: 0,
+        orderIds: [],
+        paymentMode,
+        paidVia: null,
+        closedByUid: null,
+      });
+      tx.set(
+        tableRef,
+        { currentSessionId: newSessionRef.id, updatedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+      return newSessionRef.id;
+    });
+
+    return res.json({ sessionId });
+  } catch (err) {
+    console.error("Open table session error:", err);
+    return res.status(err.statusCode || 500).json({
+      error: err.message || "Could not open table session.",
+    });
+  }
+});
+
+// POST /request-bill — customer-triggered soft lock, idempotent (public)
+app.post("/request-bill", async (req, res) => {
+  const restaurantId = String(req.body?.restaurantId || "").trim();
+  const sessionId = String(req.body?.sessionId || "").trim();
+  if (!restaurantId || !sessionId) {
+    return res.status(400).json({ error: "restaurantId and sessionId are required" });
+  }
+
+  try {
+    const status = await db.runTransaction(async (tx) => {
+      const sessionRef = db.doc(`restaurants/${restaurantId}/tableSessions/${sessionId}`);
+      const sessionSnap = await tx.get(sessionRef);
+      if (!sessionSnap.exists) {
+        throw Object.assign(new Error("Table session not found."), { statusCode: 404 });
+      }
+
+      const session = sessionSnap.data();
+      if (session.status !== "open") {
+        return session.status;
+      }
+
+      tx.update(sessionRef, {
+        status: "awaiting_payment",
+        billRequestedAt: FieldValue.serverTimestamp(),
+      });
+      return "awaiting_payment";
+    });
+
+    return res.json({ status });
+  } catch (err) {
+    console.error("Request bill error:", err);
+    return res.status(err.statusCode || 500).json({
+      error: err.message || "Could not request bill.",
+    });
+  }
+});
+
+// POST /close-table-session — staff-only, the only path to mark a table paid
+app.post("/close-table-session", requireFirebaseUser, async (req, res) => {
+  const restaurantId = String(req.body?.restaurantId || "").trim();
+  const sessionId = String(req.body?.sessionId || "").trim();
+  const paidVia = req.body?.paidVia;
+  const total = Number(req.body?.total);
+
+  if (!restaurantId || !sessionId) {
+    return res.status(400).json({ error: "restaurantId and sessionId are required" });
+  }
+  if (!["cash", "pos"].includes(paidVia)) {
+    return res.status(400).json({ error: "paidVia must be 'cash' or 'pos'" });
+  }
+  if (!Number.isFinite(total) || total < 0) {
+    return res.status(400).json({ error: "Invalid confirmed total." });
+  }
+
+  try {
+    if (!(await userCanOperate(req.firebaseUser.uid, restaurantId))) {
+      return res.status(403).json({ error: "Not authorized for this restaurant" });
+    }
+
+    const receipt = await db.runTransaction(async (tx) => {
+      const sessionRef = db.doc(`restaurants/${restaurantId}/tableSessions/${sessionId}`);
+      const sessionSnap = await tx.get(sessionRef);
+      if (!sessionSnap.exists) {
+        throw Object.assign(new Error("Table session not found."), { statusCode: 404 });
+      }
+      const session = sessionSnap.data();
+      if (session.status === "paid") {
+        throw Object.assign(new Error("Table session is already closed."), {
+          statusCode: 409,
+        });
+      }
+
+      const orderIds = Array.isArray(session.orderIds) ? session.orderIds : [];
+      const orderRefs = orderIds.map((id) =>
+        db.doc(`restaurants/${restaurantId}/orders/${id}`),
+      );
+      const orderSnaps = orderRefs.length
+        ? await Promise.all(orderRefs.map((ref) => tx.get(ref)))
+        : [];
+      const profileSnap = await tx.get(db.doc(`restaurants/${restaurantId}/profile/info`));
+
+      tx.update(sessionRef, {
+        status: "paid",
+        closedAt: FieldValue.serverTimestamp(),
+        paidVia,
+        closedByUid: req.firebaseUser.uid,
+        totalBill: total,
+      });
+
+      orderSnaps.forEach((snap) => {
+        if (snap.exists) tx.update(snap.ref, { paymentStatus: "paid" });
+      });
+
+      tx.set(
+        db.doc(`restaurants/${restaurantId}/tables/${session.table}`),
+        { currentSessionId: null, updatedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+
+      return {
+        restaurantName: profileSnap.data()?.name || restaurantId,
+        table: session.table,
+        orders: orderSnaps
+          .filter((snap) => snap.exists)
+          .map((snap) => ({
+            customerName: snap.data().customerName || "Guest",
+            items: snap.data().items || [],
+            total: snap.data().total || 0,
+          })),
+        totalBill: total,
+        paidVia,
+        closedAt: new Date().toISOString(),
+      };
+    });
+
+    return res.json({ success: true, ...receipt });
+  } catch (err) {
+    console.error("Close table session error:", err);
+    return res.status(err.statusCode || 500).json({
+      error: err.message || "Could not close table session.",
+    });
+  }
+});
+
 app.post("/finalize-online-payment", async (req, res) => {
   const {
     reference,
@@ -390,19 +667,36 @@ app.post("/finalize-online-payment", async (req, res) => {
       }))
     : [];
 
-  if (!cleanedReference || !cleanedRestaurantId || !cleanedTable || !cleanedName) {
-    return res.status(400).json({ success: false, error: "Missing payment or order details." });
+  if (
+    !cleanedReference ||
+    !cleanedRestaurantId ||
+    !cleanedTable ||
+    !cleanedName
+  ) {
+    return res
+      .status(400)
+      .json({ success: false, error: "Missing payment or order details." });
   }
-  if (!Number.isFinite(numericTotal) || numericTotal <= 0 || expectedAmount <= 0) {
-    return res.status(400).json({ success: false, error: "Invalid order total." });
+  if (
+    !Number.isFinite(numericTotal) ||
+    numericTotal <= 0 ||
+    expectedAmount <= 0
+  ) {
+    return res
+      .status(400)
+      .json({ success: false, error: "Invalid order total." });
   }
   if (!validateOrderItems(cleanedItems)) {
-    return res.status(400).json({ success: false, error: "Invalid order items." });
+    return res
+      .status(400)
+      .json({ success: false, error: "Invalid order items." });
   }
 
   const calculatedTotal = calculateItemsTotal(cleanedItems);
   if (Math.round(calculatedTotal * 100) !== expectedAmount) {
-    return res.status(400).json({ success: false, error: "Order total does not match items." });
+    return res
+      .status(400)
+      .json({ success: false, error: "Order total does not match items." });
   }
 
   try {
@@ -410,42 +704,69 @@ app.post("/finalize-online-payment", async (req, res) => {
     const metadata = transaction.metadata || {};
 
     if (Number(transaction.amount) !== expectedAmount) {
-      return res.status(400).json({ success: false, error: "Payment amount does not match order total." });
+      return res.status(400).json({
+        success: false,
+        error: "Payment amount does not match order total.",
+      });
     }
     if (transaction.currency !== "NGN") {
-      return res.status(400).json({ success: false, error: "Unsupported payment currency." });
+      return res
+        .status(400)
+        .json({ success: false, error: "Unsupported payment currency." });
     }
-    if (metadata.restaurantId && metadata.restaurantId !== cleanedRestaurantId) {
-      return res.status(400).json({ success: false, error: "Payment restaurant mismatch." });
+    if (
+      metadata.restaurantId &&
+      metadata.restaurantId !== cleanedRestaurantId
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Payment restaurant mismatch." });
     }
     if (metadata.table && String(metadata.table) !== cleanedTable) {
-      return res.status(400).json({ success: false, error: "Payment table mismatch." });
+      return res
+        .status(400)
+        .json({ success: false, error: "Payment table mismatch." });
     }
 
     const result = await db.runTransaction(async (tx) => {
-      const profileRef = db.doc(`restaurants/${cleanedRestaurantId}/profile/info`);
+      const profileRef = db.doc(
+        `restaurants/${cleanedRestaurantId}/profile/info`,
+      );
       const paymentRef = db.doc(`paymentReferences/${cleanedReference}`);
       const profileSnap = await tx.get(profileRef);
       const paymentSnap = await tx.get(paymentRef);
 
       if (!profileSnap.exists) {
-        throw Object.assign(new Error("Restaurant not found."), { statusCode: 404 });
+        throw Object.assign(new Error("Restaurant not found."), {
+          statusCode: 404,
+        });
       }
 
       const profile = profileSnap.data();
       if (normalizePaymentMode(profile.paymentMode) !== "pay_online") {
-        throw Object.assign(new Error("Online payment is not enabled for this restaurant."), { statusCode: 403 });
+        throw Object.assign(
+          new Error("Online payment is not enabled for this restaurant."),
+          { statusCode: 403 },
+        );
       }
       if (!profile.paystackSubaccountCode) {
-        throw Object.assign(new Error("Online payment account is not connected."), { statusCode: 400 });
+        throw Object.assign(
+          new Error("Online payment account is not connected."),
+          { statusCode: 400 },
+        );
       }
 
       const transactionSubaccount =
         transaction.subaccount?.subaccount_code ||
         transaction.subaccount_code ||
         null;
-      if (transactionSubaccount && transactionSubaccount !== profile.paystackSubaccountCode) {
-        throw Object.assign(new Error("Payment account mismatch."), { statusCode: 400 });
+      if (
+        transactionSubaccount &&
+        transactionSubaccount !== profile.paystackSubaccountCode
+      ) {
+        throw Object.assign(new Error("Payment account mismatch."), {
+          statusCode: 400,
+        });
       }
 
       if (paymentSnap.exists && paymentSnap.data().orderId) {
@@ -456,25 +777,37 @@ app.post("/finalize-online-payment", async (req, res) => {
         };
       }
 
-      const orderRef = db.collection(`restaurants/${cleanedRestaurantId}/orders`).doc();
+      const orderRef = db
+        .collection(`restaurants/${cleanedRestaurantId}/orders`)
+        .doc();
       let sessionRef;
       let existingOrderIds = [];
       let nextTotalBill = numericTotal;
 
       if (sessionId) {
-        sessionRef = db.doc(`restaurants/${cleanedRestaurantId}/tableSessions/${sessionId}`);
+        sessionRef = db.doc(
+          `restaurants/${cleanedRestaurantId}/tableSessions/${sessionId}`,
+        );
         const sessionSnap = await tx.get(sessionRef);
         if (!sessionSnap.exists) {
-          throw Object.assign(new Error("Table session not found."), { statusCode: 404 });
+          throw Object.assign(new Error("Table session not found."), {
+            statusCode: 404,
+          });
         }
         const session = sessionSnap.data();
         if (String(session.table) !== cleanedTable) {
-          throw Object.assign(new Error("Table session mismatch."), { statusCode: 400 });
+          throw Object.assign(new Error("Table session mismatch."), {
+            statusCode: 400,
+          });
         }
-        existingOrderIds = Array.isArray(session.orderIds) ? session.orderIds : [];
+        existingOrderIds = Array.isArray(session.orderIds)
+          ? session.orderIds
+          : [];
         nextTotalBill = Number(session.totalBill || 0) + numericTotal;
       } else {
-        sessionRef = db.collection(`restaurants/${cleanedRestaurantId}/tableSessions`).doc();
+        sessionRef = db
+          .collection(`restaurants/${cleanedRestaurantId}/tableSessions`)
+          .doc();
       }
 
       tx.set(orderRef, {

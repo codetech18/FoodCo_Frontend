@@ -1,47 +1,82 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useRestaurant } from "../context/RestaurantContext";
+import { useAuth } from "./AuthContext";
 import QRCode from "qrcode";
-import { generateToken } from "../utils/tableToken";
 
 const BASE_URL = import.meta.env.VITE_APP_URL || window.location.origin;
+const API_BASE =
+  import.meta.env.VITE_BACKEND_URL || "https://foodco-backend.onrender.com";
 
 const QRTab = () => {
   const { restaurantId } = useParams();
   const { profile } = useRestaurant();
+  const { admin } = useAuth();
   const accent = profile?.accentColor || "#fa5631";
-  const name = profile?.name || restaurantId;
 
   const [tableCount, setTableCount] = useState(10);
+  const [tokens, setTokens] = useState({}); // { tableNum: token }
   const [dataUrls, setDataUrls] = useState({}); // { tableNum: dataUrl }
-  const [generating, setGenerating] = useState(false);
+  const [loadingTokens, setLoadingTokens] = useState(false);
 
-  // Generate QR codes for tables 1..tableCount
-  const generateAll = async () => {
-    setGenerating(true);
-    const results = {};
+  // Fetch (and cache) the permanent token for any table not already known
+  useEffect(() => {
+    if (!restaurantId || !admin) return;
+    const missing = [];
     for (let t = 1; t <= tableCount; t++) {
-      const token = generateToken(restaurantId, String(t));
-      const url = `${BASE_URL}/${restaurantId}/menu?table=${t}&token=${token}`;
-      results[t] = await QRCode.toDataURL(url, {
-        width: 500,
-        margin: 3,
-        color: { dark: accent, light: "#ffffff" },
-        errorCorrectionLevel: "H",
-      });
+      if (!tokens[t]) missing.push(t);
     }
-    setDataUrls(results);
-    setGenerating(false);
-  };
+    if (missing.length === 0) return;
 
+    let cancelled = false;
+    setLoadingTokens(true);
+    (async () => {
+      const idToken = await admin.getIdToken();
+      const results = {};
+      for (const t of missing) {
+        try {
+          const res = await fetch(
+            `${API_BASE}/table-token?restaurantId=${encodeURIComponent(restaurantId)}&table=${encodeURIComponent(t)}`,
+            { headers: { Authorization: `Bearer ${idToken}` } },
+          );
+          const data = await res.json();
+          if (res.ok) results[t] = data.token;
+        } catch {
+          // leave missing — grid will show a spinner for this table
+        }
+      }
+      if (!cancelled) {
+        setTokens((prev) => ({ ...prev, ...results }));
+        setLoadingTokens(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantId, admin, tableCount, tokens]);
+
+  // Re-render QR images whenever tokens or the accent color change
   useEffect(() => {
-    generateAll();
-  }, [restaurantId, accent]);
-  // Regenerate when table count changes (debounced)
-  useEffect(() => {
-    const t = setTimeout(generateAll, 600);
-    return () => clearTimeout(t);
-  }, [tableCount]);
+    let cancelled = false;
+    (async () => {
+      const results = {};
+      for (let t = 1; t <= tableCount; t++) {
+        if (!tokens[t]) continue;
+        const url = `${BASE_URL}/${restaurantId}/menu?table=${t}&token=${tokens[t]}`;
+        results[t] = await QRCode.toDataURL(url, {
+          width: 500,
+          margin: 3,
+          color: { dark: accent, light: "#ffffff" },
+          errorCorrectionLevel: "H",
+        });
+      }
+      if (!cancelled) setDataUrls(results);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tokens, accent, tableCount, restaurantId]);
 
   const download = (tableNum) => {
     const a = document.createElement("a");
@@ -55,6 +90,8 @@ const QRTab = () => {
       setTimeout(() => download(Number(t)), i * 150);
     });
   };
+
+  const generating = loadingTokens || Object.keys(dataUrls).length === 0;
 
   return (
     <div className="max-w-3xl space-y-8">
@@ -80,10 +117,10 @@ const QRTab = () => {
             Verified Table QR Codes
           </p>
           <p className="text-white/40 text-xs leading-relaxed">
-            Each QR code contains a secure daily token. Customers can only place
-            orders after scanning a valid QR code at your restaurant. Tokens
-            expire after <strong className="text-white/60">2 hours</strong> and
-            rotate automatically every day — no setup needed.
+            Each QR code contains a permanent, secure table token. Customers
+            can only place orders after scanning a valid QR code at your
+            restaurant — print these once, they never expire or need
+            reprinting.
           </p>
         </div>
       </div>
@@ -136,8 +173,7 @@ const QRTab = () => {
           </button>
         </div>
         <p className="text-white/20 text-[10px] mt-3">
-          Tokens rotate daily. Reprint QR codes once a day or keep them the same
-          — the app handles rotation automatically.
+          Each table's QR code is permanent — print once and reuse indefinitely.
         </p>
       </div>
 

@@ -6,7 +6,10 @@ import { db } from "../../firebase/config";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useOrder } from "../../Context2";
 import { useRestaurant } from "../../context/RestaurantContext";
-import { generateToken, saveTableSession } from "../../utils/tableToken";
+import { saveActiveSession } from "../../utils/tableSession";
+
+const API_BASE =
+  import.meta.env.VITE_BACKEND_URL || "https://foodco-backend.onrender.com";
 
 const CATEGORIES = ["All", "Mains", "Drinks", "Breakfast"];
 
@@ -50,21 +53,40 @@ const Menu = () => {
   const [searchParams] = useSearchParams();
   const tableParam = searchParams.get("table") || "";
   const tokenParam = searchParams.get("token") || "";
+  const [sessionError, setSessionError] = useState("");
 
-  // ── Validate token from QR scan and save session ──────────────────────────
+  // ── Open (or rejoin) the table session for this QR scan ───────────────────
   useEffect(() => {
     if (!tableParam || !tokenParam || !restaurantId) return;
-    const expected = generateToken(restaurantId, tableParam);
-    if (tokenParam === expected) {
-      // If scanning a different table, clear the old table session first
-      const existingSession = JSON.parse(
-        localStorage.getItem("servrr_table_session") || "null",
-      );
-      if (existingSession && existingSession.table !== tableParam) {
-        localStorage.removeItem("servrr_table_session");
-      }
-      saveTableSession(restaurantId, tableParam, tokenParam);
-    }
+    let cancelled = false;
+    setSessionError("");
+    fetch(`${API_BASE}/open-table-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restaurantId,
+        table: tableParam,
+        token: tokenParam,
+      }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Invalid table QR code.");
+        return data;
+      })
+      .then(({ sessionId }) => {
+        if (cancelled) return;
+        saveActiveSession(restaurantId, tableParam, sessionId);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setSessionError(
+          err.message || "Couldn't open this table. Please ask staff for help.",
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [tableParam, tokenParam, restaurantId]);
 
   // ── Load menu ─────────────────────────────────────────────────────────────
@@ -156,6 +178,11 @@ const Menu = () => {
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent" />
 
       <div className="max-w-7xl mx-auto px-6 lg:px-10">
+        {sessionError && (
+          <div className="mb-8 px-4 py-3 border border-red-500/40 bg-red-500/10 text-red-300 text-sm">
+            {sessionError}
+          </div>
+        )}
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-14">
           <div>

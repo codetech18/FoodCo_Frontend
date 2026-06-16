@@ -51,11 +51,7 @@ service cloud.firestore {
         hasRestaurantRole(restaurantId, ["owner", "manager", "admin", "kitchen", "bar", "waiter", "cashier"]);
     }
 
-    function isValidPaymentMode(mode) {
-      return mode in ["at_table", "pay_online", "online"];
-    }
-
-    function isUnpaidOrderCreate() {
+    function isUnpaidOrderCreate(restaurantId) {
       return request.resource.data.keys().hasOnly([
           "customerName",
           "email",
@@ -74,7 +70,9 @@ service cloud.firestore {
         && request.resource.data.items.size() <= 100
         && request.resource.data.total is number
         && request.resource.data.total >= 0
-        && request.resource.data.status == "pending";
+        && request.resource.data.status == "pending"
+        && request.resource.data.sessionId is string
+        && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.status == "open";
     }
 
     match /users/{userId} {
@@ -161,7 +159,7 @@ service cloud.firestore {
         allow get: if true;
         allow list: if canViewRestaurantOps(restaurantId);
 
-        allow create: if isUnpaidOrderCreate();
+        allow create: if isUnpaidOrderCreate(restaurantId);
 
         allow update: if isSuperAdmin() ||
           (
@@ -182,39 +180,30 @@ service cloud.firestore {
         allow delete: if canManageRestaurant(restaurantId);
       }
 
+      match /tables/{tableId} {
+        allow read, write: if false; // backend (Admin SDK) only — mints/reads the permanent QR token
+      }
+
       match /tableSessions/{sessionId} {
         allow get: if true;
         allow list: if canViewRestaurantOps(restaurantId);
 
-        allow create: if request.resource.data.keys().hasOnly([
-            "table",
-            "status",
-            "openedAt",
-            "totalBill",
-            "orderIds",
-            "paymentMode"
-          ])
-          && request.resource.data.table is string
-          && request.resource.data.status == "open"
-          && request.resource.data.totalBill is number
-          && request.resource.data.totalBill >= 0
-          && request.resource.data.orderIds is list
-          && isValidPaymentMode(request.resource.data.paymentMode);
+        // Sessions are only ever created by the backend's /open-table-session (Admin SDK bypasses rules).
+        allow create: if false;
 
-        allow update: if isSuperAdmin() ||
-          canViewRestaurantOps(restaurantId) ||
-          (
-            resource.data.status == "open"
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              "totalBill",
-              "updatedAt",
-              "orderIds",
-              "status",
-              "billRequestedAt"
-            ])
-            && request.resource.data.status in ["open", "awaiting_payment"]
-            && request.resource.data.totalBill >= resource.data.totalBill
-          );
+        // The only client-side write left is bumping the running bill as pending orders come in.
+        // All lifecycle transitions (status, billRequestedAt, closedAt, paidVia, closedByUid) are
+        // backend-only via /request-bill and /close-table-session.
+        allow update: if resource.data.status == "open"
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "totalBill",
+            "updatedAt",
+            "orderIds"
+          ])
+          && request.resource.data.totalBill is number
+          && request.resource.data.totalBill >= resource.data.totalBill
+          && request.resource.data.orderIds is list
+          && request.resource.data.orderIds.size() >= resource.data.orderIds.size();
 
         allow delete: if isSuperAdmin();
       }

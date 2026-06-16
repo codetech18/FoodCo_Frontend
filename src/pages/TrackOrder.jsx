@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import {
-  doc,
-  onSnapshot,
-  updateDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useRestaurant } from "../context/RestaurantContext";
+
+const API_BASE =
+  import.meta.env.VITE_BACKEND_URL || "https://foodco-backend.onrender.com";
 
 const STATUS_STEPS = ["pending", "in_progress", "ready", "completed"];
 
@@ -134,13 +132,12 @@ const TrackOrder = () => {
     if (!order?.sessionId || requestingBill) return;
     setRequestingBill(true);
     try {
-      await updateDoc(
-        doc(db, "restaurants", restaurantId, "tableSessions", order.sessionId),
-        {
-          status: "awaiting_payment",
-          billRequestedAt: serverTimestamp(),
-        },
-      );
+      const res = await fetch(`${API_BASE}/request-bill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restaurantId, sessionId: order.sessionId }),
+      });
+      if (!res.ok) throw new Error("Request failed");
     } catch (err) {
       window.alert("Failed to request bill. Try again.");
     } finally {
@@ -182,7 +179,7 @@ const TrackOrder = () => {
       : new Set();
   const sessionStatus = tableSession?.status;
   const billAlreadyRequested = sessionStatus === "awaiting_payment";
-  const billClosed = sessionStatus === "paid" || sessionStatus === "closed";
+  const billClosed = sessionStatus === "paid";
   const canRequestBill =
     Boolean(order.sessionId) &&
     !isPaidOnline &&

@@ -14,7 +14,6 @@ import ProtectedRoute from "./admin/ProtectedRoute";
 import SuperAdminRoute from "./SuperAdminRoute";
 import { RestaurantProvider, useRestaurant } from "./context/RestaurantContext";
 
-const Home = lazy(() => import("./pages/Home"));
 const MenuPage = lazy(() => import("./pages/MenuPage"));
 const OrderPage = lazy(() => import("./pages/OrderPage"));
 const TrackOrder = lazy(() => import("./pages/TrackOrder"));
@@ -64,7 +63,7 @@ const RestaurantRoutes = () => {
                 path="/"
                 element={
                   <SuspendedGuard>
-                    <Home />
+                    <MenuPage />
                   </SuspendedGuard>
                 }
               />

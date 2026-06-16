@@ -11,7 +11,12 @@ import {
 import { useParams } from "react-router-dom";
 import { db } from "../firebase/config";
 import { useRestaurant } from "../context/RestaurantContext";
+import { useAuth } from "./AuthContext";
 import ReauthModal, { isReauthValid } from "../components/ReauthModal";
+import ReceiptView from "./ReceiptView";
+
+const API_BASE =
+  import.meta.env.VITE_BACKEND_URL || "https://foodco-backend.onrender.com";
 
 const STATUS_CONFIG = {
   pending: {
@@ -509,8 +514,108 @@ const OrderCard = ({
   );
 };
 
+// ── Close Table Confirmation Modal ──────────────────────────────────────────────
+const CloseTableModal = ({ session, accent, onCancel, onConfirm }) => {
+  const [paidVia, setPaidVia] = useState("cash");
+  const [total, setTotal] = useState(String(session.totalBill || 0));
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleConfirm = async () => {
+    const numeric = parseFloat(total);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+      setError("Enter a valid amount.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await onConfirm(paidVia, numeric);
+    } catch (err) {
+      setError(err.message || "Failed to close table.");
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center px-4">
+      <div
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        onClick={() => !submitting && onCancel()}
+      />
+      <div className="relative z-10 bg-[#111111] border border-white/10 w-full max-w-sm p-6 shadow-2xl">
+        <h3 className="text-white font-bold text-base mb-1">
+          Close Table {session.table}
+        </h3>
+        <p className="text-white/40 text-xs mb-5">
+          Confirm payment was collected before closing. This is the only way
+          to mark this table as paid.
+        </p>
+
+        <label className="block text-white/40 text-[10px] font-semibold tracking-widest uppercase mb-2">
+          Payment Method
+        </label>
+        <div className="flex gap-2 mb-4">
+          {["cash", "pos"].map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setPaidVia(m)}
+              className="flex-1 text-xs font-bold py-2.5 border transition-all cursor-pointer"
+              style={
+                paidVia === m
+                  ? { background: accent, borderColor: accent, color: "white" }
+                  : {
+                      background: "transparent",
+                      borderColor: "rgba(255,255,255,0.15)",
+                      color: "rgba(255,255,255,0.5)",
+                    }
+              }
+            >
+              {m === "cash" ? "Cash" : "POS / Card"}
+            </button>
+          ))}
+        </div>
+
+        <label className="block text-white/40 text-[10px] font-semibold tracking-widest uppercase mb-2">
+          Confirmed Total (₦)
+        </label>
+        <input
+          type="number"
+          min="0"
+          value={total}
+          onChange={(e) => setTotal(e.target.value)}
+          className="w-full bg-[#1a1a1a] border border-white/10 text-white text-sm px-4 py-2.5 focus:outline-none mb-2"
+        />
+
+        {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
+
+        <div className="flex gap-3 mt-4">
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting}
+            className="flex-1 text-white text-xs font-bold py-2.5 transition-all cursor-pointer border-none disabled:opacity-60"
+            style={{ background: accent }}
+          >
+            {submitting ? "Closing..." : "Close Table & Print Receipt"}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            className="px-4 text-white/40 hover:text-white text-xs font-semibold border border-white/10 hover:border-white/30 transition-all cursor-pointer bg-transparent disabled:opacity-60"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Table Session Card ────────────────────────────────────────────────────────
-const SessionCard = ({ session, orders, accent, onClose, onMarkPaid }) => {
+const SessionCard = ({ session, orders, accent, onRequestClose }) => {
   const [expanded, setExpanded] = useState(true);
   const cfg = SESSION_STATUS[session.status] || SESSION_STATUS.open;
   const sessionOrders = orders.filter((o) => session.orderIds?.includes(o.id));
@@ -644,10 +749,10 @@ const SessionCard = ({ session, orders, accent, onClose, onMarkPaid }) => {
           )}
 
           {/* Actions */}
-          {session.status !== "closed" && session.status !== "paid" && (
+          {session.status !== "paid" && (
             <div className="flex gap-3 pt-2">
               <button
-                onClick={() => onMarkPaid(session.id)}
+                onClick={() => onRequestClose(session)}
                 className="flex-1 text-white text-xs font-bold py-2.5 transition-all cursor-pointer border-none flex items-center justify-center gap-2"
                 style={{ background: accent }}
                 onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
@@ -662,19 +767,13 @@ const SessionCard = ({ session, orders, accent, onClose, onMarkPaid }) => {
                 >
                   <path d="M20 6L9 17l-5-5" strokeLinecap="round" />
                 </svg>
-                Mark as Paid & Close
-              </button>
-              <button
-                onClick={() => onClose(session.id)}
-                className="px-4 text-white/40 hover:text-white text-xs font-semibold border border-white/10 hover:border-white/30 transition-all cursor-pointer bg-transparent"
-              >
-                Close Table
+                Close Table & Print Receipt
               </button>
             </div>
           )}
-          {(session.status === "paid" || session.status === "closed") && (
+          {session.status === "paid" && (
             <div className="text-center py-2 text-white/20 text-xs">
-              {session.status === "paid" ? "✓ Paid & Closed" : "Table Closed"}
+              ✓ Paid & Closed
             </div>
           )}
         </div>
@@ -687,6 +786,7 @@ const SessionCard = ({ session, orders, accent, onClose, onMarkPaid }) => {
 const OrdersTab = () => {
   const { restaurantId } = useParams();
   const { profile } = useRestaurant();
+  const { admin } = useAuth();
   const accent = profile?.accentColor || "#fa5631";
 
   const [orders, setOrders] = useState([]);
@@ -698,6 +798,8 @@ const OrdersTab = () => {
   const [newOrderIds, setNewOrderIds] = useState(new Set());
   const [toasts, setToasts] = useState([]);
   const [showReauth, setShowReauth] = useState(false);
+  const [closingSession, setClosingSession] = useState(null);
+  const [receipt, setReceipt] = useState(null);
   const prevOrderIds = useRef(new Set());
   const isFirstLoad = useRef(true);
   const pendingAction = useRef(null);
@@ -846,24 +948,33 @@ const OrdersTab = () => {
     }).catch(console.error);
   };
 
-  const closeSession = async (sessionId) => {
-    const session = sessions.find((s) => s.id === sessionId);
-    const sessionOrders = orders.filter((o) => session?.orderIds?.includes(o.id));
-    await updateDoc(
-      doc(db, "restaurants", restaurantId, "tableSessions", sessionId),
-      { status: "closed", closedAt: new Date() },
-    );
-    if (session) sendReceipt(session, sessionOrders);
+  const closeTableSession = async (session, paidVia, total) => {
+    const idToken = await admin.getIdToken();
+    const res = await fetch(`${API_BASE}/close-table-session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        restaurantId,
+        sessionId: session.id,
+        paidVia,
+        total,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Failed to close table.");
+    return data;
   };
 
-  const markSessionPaid = async (sessionId) => {
-    const session = sessions.find((s) => s.id === sessionId);
-    const sessionOrders = orders.filter((o) => session?.orderIds?.includes(o.id));
-    await updateDoc(
-      doc(db, "restaurants", restaurantId, "tableSessions", sessionId),
-      { status: "paid", paidAt: new Date() },
-    );
-    if (session) sendReceipt(session, sessionOrders);
+  const handleConfirmClose = async (paidVia, total) => {
+    const session = closingSession;
+    const data = await closeTableSession(session, paidVia, total);
+    setClosingSession(null);
+    setReceipt(data);
+    const sessionOrders = orders.filter((o) => session.orderIds?.includes(o.id));
+    sendReceipt({ table: session.table, totalBill: data.totalBill }, sessionOrders);
   };
 
   const activeSessions = sessions.filter(
@@ -914,6 +1025,17 @@ const OrdersTab = () => {
           onCancel={() => { setShowReauth(false); pendingAction.current = null; }}
           onSuccess={() => { setShowReauth(false); pendingAction.current?.(); pendingAction.current = null; }}
         />
+      )}
+      {closingSession && (
+        <CloseTableModal
+          session={closingSession}
+          accent={accent}
+          onCancel={() => setClosingSession(null)}
+          onConfirm={handleConfirmClose}
+        />
+      )}
+      {receipt && (
+        <ReceiptView receipt={receipt} onClose={() => setReceipt(null)} />
       )}
       {/* Toast stack */}
       <div
@@ -989,8 +1111,7 @@ const OrdersTab = () => {
                     session={session}
                     orders={orders}
                     accent={accent}
-                    onClose={closeSession}
-                    onMarkPaid={markSessionPaid}
+                    onRequestClose={setClosingSession}
                   />
                 ))}
               </div>
@@ -1013,8 +1134,7 @@ const OrdersTab = () => {
                         session={session}
                         orders={orders}
                         accent={accent}
-                        onClose={closeSession}
-                        onMarkPaid={markSessionPaid}
+                        onRequestClose={setClosingSession}
                       />
                     ))}
                 </div>
