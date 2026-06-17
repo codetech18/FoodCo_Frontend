@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { PRICING, PLAN_LABELS, normalizePlan, getBillingDetails } from "../utils/pricing";
 import {
   collection,
   getDocs,
@@ -62,8 +63,8 @@ const ChartCard = ({ title, subtitle, children }) => (
 );
 
 const PLAN_OPTIONS = [
-  { key: "starter", label: "Starter", price: 20000 },
-  { key: "pro",     label: "Pro",     price: 40000 },
+  { key: "growth", label: "Growth" },
+  { key: "pro",    label: "Pro"    },
 ];
 
 const PAYMENT_MODE_OPTIONS = [
@@ -78,8 +79,16 @@ const paymentModeLabel = (mode) =>
   normalizePaymentMode(mode) === "pay_online" ? "Pay Online" : "Pay at Table";
 
 const PaymentModal = ({ restaurant, onConfirm, onCancel, loading }) => {
-  const [selectedPlan, setSelectedPlan] = useState(restaurant.plan || "starter");
-  const price = PLAN_OPTIONS.find((p) => p.key === selectedPlan)?.price || 20000;
+  const [selectedPlan, setSelectedPlan] = useState(normalizePlan(restaurant.plan));
+  const [selectedCycle, setSelectedCycle] = useState("monthly");
+
+  const { monthlyFee, billingAmountPaid } = getBillingDetails(selectedPlan, selectedCycle);
+  const extensionDays = selectedCycle === "yearly" ? 365 : 30;
+  const now = new Date();
+  const currentPaidUntil = restaurant.subscriptionPaidUntil;
+  const base = currentPaidUntil && currentPaidUntil > now ? currentPaidUntil : now;
+  const activeUntil = new Date(base);
+  activeUntil.setDate(activeUntil.getDate() + extensionDays);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
@@ -93,7 +102,7 @@ const PaymentModal = ({ restaurant, onConfirm, onCancel, loading }) => {
           {restaurant.name} · {restaurant.restaurantId}
         </p>
 
-        <div className="space-y-2 mb-6">
+        <div className="space-y-2 mb-4">
           <p className="text-white/40 text-[10px] font-black uppercase tracking-widest mb-3">
             Plan
           </p>
@@ -120,26 +129,59 @@ const PaymentModal = ({ restaurant, onConfirm, onCancel, loading }) => {
                 <span className="text-white text-sm font-semibold">{opt.label}</span>
               </div>
               <span className="text-white/50 text-sm font-bold">
-                ₦{opt.price.toLocaleString()}/mo
+                ₦{PRICING[opt.key].monthly.toLocaleString()}/mo
               </span>
             </button>
           ))}
         </div>
 
+        <div className="mb-6">
+          <p className="text-white/40 text-[10px] font-black uppercase tracking-widest mb-3">
+            Billing Cycle
+          </p>
+          <div className="flex bg-white/5 rounded-xl p-1 gap-1">
+            {[
+              { key: "monthly", label: "Monthly" },
+              { key: "yearly",  label: "Yearly", sub: "Save 10%" },
+            ].map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setSelectedCycle(c.key)}
+                className="flex-1 flex flex-col items-center py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer border-none"
+                style={
+                  selectedCycle === c.key
+                    ? { background: "rgba(74,222,128,0.15)", color: "#4ade80" }
+                    : { background: "transparent", color: "rgba(255,255,255,0.3)" }
+                }
+              >
+                {c.label}
+                {c.sub && <span className="text-[8px] mt-0.5 opacity-70">{c.sub}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="bg-[#1a1a1a] border border-white/5 rounded-xl p-4 mb-6 space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-white/40 text-xs font-bold uppercase tracking-widest">Amount to record</span>
-            <span className="text-green-400 font-black text-lg">₦{price.toLocaleString()}</span>
+            <span className="text-green-400 font-black text-lg">₦{billingAmountPaid.toLocaleString()}</span>
           </div>
+          {selectedCycle === "yearly" && (
+            <div className="flex justify-between items-center">
+              <span className="text-white/40 text-xs font-bold uppercase tracking-widest">Effective rate</span>
+              <span className="text-white/50 text-xs font-semibold">₦{monthlyFee.toLocaleString()}/mo</span>
+            </div>
+          )}
           <div className="flex justify-between items-center">
             <span className="text-white/40 text-xs font-bold uppercase tracking-widest">Active until</span>
             <span className="text-white/70 text-xs font-semibold">
-              {new Date(Date.now() + 30 * 86400000).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}
+              {activeUntil.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}
             </span>
           </div>
-          {restaurant.subscriptionPaidUntil && new Date(restaurant.subscriptionPaidUntil) > new Date() && (
+          {currentPaidUntil && currentPaidUntil > now && (
             <p className="text-yellow-400/60 text-[10px]">
-              Currently active until {new Date(restaurant.subscriptionPaidUntil).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })} — confirming will reset to 30 days from today.
+              Currently active until {currentPaidUntil.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })} — will extend by {extensionDays} days from that date.
             </p>
           )}
         </div>
@@ -152,7 +194,7 @@ const PaymentModal = ({ restaurant, onConfirm, onCancel, loading }) => {
             Cancel
           </button>
           <button
-            onClick={() => onConfirm(selectedPlan)}
+            onClick={() => onConfirm(selectedPlan, selectedCycle)}
             disabled={loading}
             className="flex-1 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-black text-[10px] font-black uppercase tracking-widest py-4 rounded-xl transition-all cursor-pointer border-none flex items-center justify-center gap-2"
           >
@@ -531,7 +573,7 @@ const SuperAdminDashboard = () => {
           paymentPreference: normalizePaymentMode(
             profile.paymentPreference || profile.paymentMode,
           ),
-          plan: profile.plan || "starter",
+          plan: normalizePlan(profile.plan),
           subscriptionStatus: profile.subscriptionStatus || "trial",
           trialEndsAt,
           subscriptionPaidUntil: paidUntil,
@@ -664,19 +706,27 @@ const SuperAdminDashboard = () => {
     setConfirm(null);
   };
 
-  const PLAN_PRICES = { starter: 20000, pro: 40000 };
-
-  const handleMarkPaid = async (restaurantId, selectedPlan) => {
+  const handleMarkPaid = async (restaurantId, selectedPlan, selectedCycle = "monthly") => {
     setActionLoading(restaurantId);
-    const paidUntil = new Date();
-    paidUntil.setDate(paidUntil.getDate() + 30);
 
     const r = restaurants.find((x) => x.restaurantId === restaurantId);
+    const now = new Date();
+    const currentPaidUntil = r?.subscriptionPaidUntil;
+    const base = currentPaidUntil && currentPaidUntil > now ? currentPaidUntil : now;
+    const daysToAdd = selectedCycle === "yearly" ? 365 : 30;
+    const paidUntil = new Date(base);
+    paidUntil.setDate(paidUntil.getDate() + daysToAdd);
+
+    const { monthlyFee, billingAmountPaid } = getBillingDetails(selectedPlan, selectedCycle);
+
     const updates = {
       subscriptionStatus: "active",
       subscriptionPaidUntil: paidUntil,
       subExpired: false,
       plan: selectedPlan,
+      billingCycle: selectedCycle,
+      monthlyFee,
+      billingAmountPaid,
     };
     if (r?.suspendedReason === "subscription_expired") {
       updates.suspended = false;
@@ -694,7 +744,9 @@ const SuperAdminDashboard = () => {
       {
         date: serverTimestamp(),
         plan: selectedPlan,
-        amount: PLAN_PRICES[selectedPlan] || 20000,
+        cycle: selectedCycle,
+        amount: billingAmountPaid,
+        monthlyFee,
         status: "paid",
       },
     );
@@ -817,7 +869,7 @@ const SuperAdminDashboard = () => {
         <PaymentModal
           restaurant={paymentModal}
           loading={actionLoading === paymentModal.restaurantId}
-          onConfirm={(plan) => handleMarkPaid(paymentModal.restaurantId, plan)}
+          onConfirm={(plan, cycle) => handleMarkPaid(paymentModal.restaurantId, plan, cycle)}
           onCancel={() => setPaymentModal(null)}
         />
       )}

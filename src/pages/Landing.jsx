@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { PRICING } from "../utils/pricing";
 
 // --- Custom Premium Icons ---
 const Icons = {
@@ -616,24 +617,114 @@ const Landing = () => {
         </ScrollReveal>
       </section>
 
-      {/* --- Pricing Teaser --- */}
+      {/* --- Pricing --- */}
       <section id="pricing" className="px-6 mb-32 max-w-5xl mx-auto">
-        <ScrollReveal effect="scale">
-          <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-white/10 rounded-[2rem] p-12 text-center relative overflow-hidden flex flex-col items-center justify-center">
-            <div className="absolute -top-24 -right-24 w-64 h-64 bg-[#fa5631]/20 blur-[100px] rounded-full pointer-events-none" />
-            <h2 className="font-display text-4xl font-black mb-4 relative z-10">
-              Zero upfront costs.
+        <ScrollReveal>
+          <div className="text-center mb-12">
+            <span className="text-[#fa5631] text-[10px] font-black uppercase tracking-[0.3em] mb-4 block">
+              Pricing
+            </span>
+            <h2 className="font-display text-4xl md:text-5xl font-black mb-4">
+              Simple, flat pricing.
             </h2>
-            <p className="text-xl text-white/60 mb-8 relative z-10 max-w-2xl">
-              Free during first 7 days of trial. Simple, transparent
-              commission-based pricing only when you scale.
+            <p className="text-white/50 text-lg max-w-xl mx-auto">
+              7 days free — no card needed. Pay monthly or save 10% with a yearly plan.
             </p>
-            <Link
-              to="/billing"
-              className="inline-flex items-center gap-2 bg-white/5 text-[#fa5631] hover:bg-white/10 hover:text-[#fa5631]/90 font-bold px-8 py-3 rounded-full border border-[#fa5631]/30 relative z-10 transition-all duration-300"
-            >
-              View Pricing & Billing Dashboard <Icons.ArrowRight />
-            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Free Trial */}
+            <div className="flex flex-col bg-[#111] border border-white/5 rounded-[2rem] p-8">
+              <div className="mb-8">
+                <h3 className="text-xl font-bold mb-2">Free Trial</h3>
+                <div className="flex items-baseline gap-1 mb-4">
+                  <span className="text-4xl font-black">₦0</span>
+                  <span className="text-white/40 text-sm"> for 7 days</span>
+                </div>
+                <p className="text-white/40 text-sm leading-relaxed">
+                  Full access from day one. No credit card required.
+                </p>
+              </div>
+              <ul className="space-y-3 mb-8 flex-1">
+                {["Complete menu management", "QR code ordering", "Order tracking & analytics", "Automatic on signup"].map((f) => (
+                  <li key={f} className="flex items-center gap-3 text-sm text-white/60">
+                    <svg className="w-4 h-4 text-[#fa5631] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                to="/signup"
+                className="w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider text-center border border-white/10 text-white/40 hover:bg-white/5 transition-all"
+              >
+                Start Free
+              </Link>
+            </div>
+
+            {/* Growth */}
+            <div className="flex flex-col bg-[#111] border border-white/5 rounded-[2rem] p-8">
+              <div className="mb-8">
+                <h3 className="text-xl font-bold mb-2">Growth</h3>
+                <div className="flex items-baseline gap-1 mb-1">
+                  <span className="text-4xl font-black">₦{PRICING.growth.monthly.toLocaleString()}</span>
+                  <span className="text-white/40 text-sm">/month</span>
+                </div>
+                <p className="text-white/60 text-sm font-semibold mb-4">
+                  or ₦{PRICING.growth.yearly.toLocaleString()}/mo billed yearly (₦{(PRICING.growth.yearly * 12).toLocaleString()})
+                </p>
+                <p className="text-white/40 text-sm leading-relaxed">
+                  For cafes and small restaurants going digital.
+                </p>
+              </div>
+              <ul className="space-y-3 mb-8 flex-1">
+                {["Up to 300 orders/month", "Menu management", "QR code generation", "7-day & 30-day analytics"].map((f) => (
+                  <li key={f} className="flex items-center gap-3 text-sm text-white/60">
+                    <svg className="w-4 h-4 text-[#fa5631] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                to="/signup"
+                className="w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider text-center border border-white/10 text-white/40 hover:bg-white/5 transition-all"
+              >
+                Get Started
+              </Link>
+            </div>
+
+            {/* Pro */}
+            <div className="flex flex-col bg-[#111] border border-[#fa5631]/40 rounded-[2rem] p-8 relative shadow-[0_0_50px_-12px_rgba(250,86,49,0.25)] md:-translate-y-2">
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-[#fa5631] text-black text-[10px] font-black uppercase py-1.5 px-4 rounded-full">
+                Most Popular
+              </div>
+              <div className="mb-8">
+                <h3 className="text-xl font-bold mb-2">Pro</h3>
+                <div className="flex items-baseline gap-1 mb-1">
+                  <span className="text-4xl font-black">₦{PRICING.pro.monthly.toLocaleString()}</span>
+                  <span className="text-white/40 text-sm">/month</span>
+                </div>
+                <p className="text-white/60 text-sm font-semibold mb-4">
+                  or ₦{PRICING.pro.yearly.toLocaleString()}/mo billed yearly (₦{(PRICING.pro.yearly * 12).toLocaleString()})
+                </p>
+                <p className="text-white/40 text-sm leading-relaxed">
+                  Built for busy restaurants that need full control.
+                </p>
+              </div>
+              <ul className="space-y-3 mb-8 flex-1">
+                {["Unlimited orders", "Full analytics + all-time view", "Table sessions & running bill", "Priority support"].map((f) => (
+                  <li key={f} className="flex items-center gap-3 text-sm text-white/60">
+                    <svg className="w-4 h-4 text-[#fa5631] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                to="/signup"
+                className="w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider text-center bg-[#fa5631] text-black hover:bg-[#ff6b4a] transition-all shadow-xl shadow-[#fa5631]/20"
+              >
+                Go Pro
+              </Link>
+            </div>
           </div>
         </ScrollReveal>
       </section>

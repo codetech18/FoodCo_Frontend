@@ -518,8 +518,10 @@ const OrderCard = ({
 const CloseTableModal = ({ session, accent, onCancel, onConfirm }) => {
   const [paidVia, setPaidVia] = useState("cash");
   const [total, setTotal] = useState(String(session.totalBill || 0));
+  const [billMode, setBillMode] = useState("single");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const orderCount = session.orderIds?.length || 0;
 
   const handleConfirm = async () => {
     const numeric = parseFloat(total);
@@ -530,7 +532,7 @@ const CloseTableModal = ({ session, accent, onCancel, onConfirm }) => {
     setSubmitting(true);
     setError("");
     try {
-      await onConfirm(paidVia, numeric);
+      await onConfirm(paidVia, numeric, billMode);
     } catch (err) {
       setError(err.message || "Failed to close table.");
       setSubmitting(false);
@@ -576,6 +578,38 @@ const CloseTableModal = ({ session, accent, onCancel, onConfirm }) => {
             </button>
           ))}
         </div>
+
+        {orderCount > 1 && (
+          <>
+            <label className="block text-white/40 text-[10px] font-semibold tracking-widest uppercase mb-2">
+              Receipt
+            </label>
+            <div className="flex gap-2 mb-4">
+              {[
+                { key: "single", label: "One Bill" },
+                { key: "split", label: `Split (${orderCount})` },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setBillMode(key)}
+                  className="flex-1 text-xs font-bold py-2.5 border transition-all cursor-pointer"
+                  style={
+                    billMode === key
+                      ? { background: accent, borderColor: accent, color: "white" }
+                      : {
+                          background: "transparent",
+                          borderColor: "rgba(255,255,255,0.15)",
+                          color: "rgba(255,255,255,0.5)",
+                        }
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         <label className="block text-white/40 text-[10px] font-semibold tracking-widest uppercase mb-2">
           Confirmed Total (₦)
@@ -968,11 +1002,11 @@ const OrdersTab = () => {
     return data;
   };
 
-  const handleConfirmClose = async (paidVia, total) => {
+  const handleConfirmClose = async (paidVia, total, billMode) => {
     const session = closingSession;
     const data = await closeTableSession(session, paidVia, total);
     setClosingSession(null);
-    setReceipt(data);
+    setReceipt({ ...data, billMode });
     const sessionOrders = orders.filter((o) => session.orderIds?.includes(o.id));
     sendReceipt({ table: session.table, totalBill: data.totalBill }, sessionOrders);
   };

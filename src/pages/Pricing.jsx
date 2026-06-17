@@ -1,5 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import { PRICING } from "../utils/pricing";
 
 const Icons = {
   Check: () => (
@@ -48,9 +49,10 @@ const plans = [
     featured: false,
   },
   {
-    name: "Starter",
-    price: "₦20,000",
+    name: "Growth",
+    price: `₦${PRICING.growth.monthly.toLocaleString()}`,
     period: "/month",
+    yearlySub: `₦${PRICING.growth.yearly.toLocaleString()}/mo billed yearly (₦${(PRICING.growth.yearly * 12).toLocaleString()})`,
     description: "Perfect for cafes and small restaurants going digital.",
     features: [
       "Up to 300 orders/month",
@@ -63,8 +65,9 @@ const plans = [
   },
   {
     name: "Pro",
-    price: "₦40,000",
+    price: `₦${PRICING.pro.monthly.toLocaleString()}`,
     period: "/month",
+    yearlySub: `₦${PRICING.pro.yearly.toLocaleString()}/mo billed yearly (₦${(PRICING.pro.yearly * 12).toLocaleString()})`,
     description: "Built for busy restaurants that need full control.",
     features: [
       "Unlimited orders",
@@ -142,11 +145,14 @@ const Pricing = () => {
 
               <div className="mb-8">
                 <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
-                <div className="flex items-baseline gap-1 mb-4">
+                <div className="flex items-baseline gap-1 mb-1">
                   <span className="text-4xl font-black">{plan.price}</span>
                   <span className="text-white/40 text-sm">{plan.period}</span>
                 </div>
-                <p className="text-white/40 text-sm leading-relaxed">
+                {plan.yearlySub && (
+                  <p className="text-white/60 text-sm font-semibold mb-4">{plan.yearlySub}</p>
+                )}
+                <p className="text-white/40 text-sm leading-relaxed mt-4">
                   {plan.description}
                 </p>
               </div>

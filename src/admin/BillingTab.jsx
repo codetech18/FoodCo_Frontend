@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useRestaurant } from "../context/RestaurantContext";
+import { PRICING, PLAN_LABELS, normalizePlan } from "../utils/pricing";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const toMillis = (ts) => {
@@ -26,8 +27,11 @@ const fmtDate = (ts) => {
   });
 };
 
-const PLAN_PRICES = { starter: 20000, pro: 40000 };
-const PLAN_LABELS = { starter: "Starter", pro: "Pro" };
+const PLAN_PRICES = {
+  growth: PRICING.growth.monthly,
+  starter: PRICING.growth.monthly, // backward compat
+  pro: PRICING.pro.monthly,
+};
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const CheckIcon = () => (
@@ -70,14 +74,15 @@ const BillingTab = () => {
   const isExpired = subscriptionStatus === "expired";
 
   const trialDaysLeft = daysLeft(profile?.trialEndsAt);
-  const plan = profile?.plan || "starter";
-  const monthlyFee = PLAN_PRICES[plan] || 20000;
+  const plan = normalizePlan(profile?.plan);
+  const monthlyFee = profile?.monthlyFee || PLAN_PRICES[plan] || 20000;
 
   const pricingTiers = [
     {
       id: "free",
       name: "Free Trial",
       price: "₦0",
+      priceSub: "for 7 days",
       features: [
         "7 days free — no card needed",
         "Full access to all features",
@@ -86,9 +91,11 @@ const BillingTab = () => {
       ],
     },
     {
-      id: "starter",
-      name: "Starter",
-      price: "₦20,000",
+      id: "growth",
+      name: "Growth",
+      price: `₦${PRICING.growth.monthly.toLocaleString()}`,
+      priceSub: "/month",
+      yearlySub: `₦${PRICING.growth.yearly.toLocaleString()}/mo billed yearly (₦${(PRICING.growth.yearly * 12).toLocaleString()})`,
       features: [
         "Up to 300 orders/month",
         "Menu management",
@@ -99,7 +106,9 @@ const BillingTab = () => {
     {
       id: "pro",
       name: "Pro",
-      price: "₦40,000",
+      price: `₦${PRICING.pro.monthly.toLocaleString()}`,
+      priceSub: "/month",
+      yearlySub: `₦${PRICING.pro.yearly.toLocaleString()}/mo billed yearly (₦${(PRICING.pro.yearly * 12).toLocaleString()})`,
       isPopular: true,
       features: [
         "Unlimited orders",
@@ -189,6 +198,14 @@ const BillingTab = () => {
               </div>
               <div>
                 <span className="text-xs font-bold text-white/40 uppercase tracking-widest block mb-1">
+                  Billing Cycle
+                </span>
+                <span className="text-sm font-semibold capitalize">
+                  {profile?.billingCycle || "monthly"}
+                </span>
+              </div>
+              <div>
+                <span className="text-xs font-bold text-white/40 uppercase tracking-widest block mb-1">
                   Monthly Fee
                 </span>
                 <span className="text-sm font-bold" style={{ color: accent }}>
@@ -216,7 +233,7 @@ const BillingTab = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {pricingTiers.map((tier) => {
               const isCurrent =
-                tier.id === "free" ? isTrial : plan === tier.id && !isTrial;
+                tier.id === "free" ? isTrial : normalizePlan(plan) === tier.id && !isTrial;
               return (
                 <div
                   key={tier.id}
@@ -238,12 +255,15 @@ const BillingTab = () => {
                     <h3 className="font-display text-xl font-black uppercase tracking-tight mb-2">
                       {tier.name}
                     </h3>
-                    <div className="flex items-baseline gap-1">
+                    <div className="flex items-baseline gap-1 mb-1">
                       <span className="text-3xl font-bold">{tier.price}</span>
                       <span className="text-sm font-medium text-white/40">
-                        {tier.id === "free" ? " for 7 days" : "/month"}
+                        {tier.priceSub}
                       </span>
                     </div>
+                    {tier.yearlySub && (
+                      <p className="text-white/60 text-sm font-semibold">{tier.yearlySub}</p>
+                    )}
                   </div>
                   <ul className="space-y-3 mb-8 flex-1">
                     {tier.features.map((f, i) => (
@@ -282,7 +302,7 @@ const BillingTab = () => {
             </p>
             <ol className="space-y-6 mb-10">
               {[
-                `Choose your plan and note the monthly amount (₦${monthlyFee.toLocaleString()} for ${PLAN_LABELS[plan]}).`,
+                `Choose your plan and note the monthly amount (₦${monthlyFee.toLocaleString()} for ${PLAN_LABELS[plan] || plan}).`,
                 "Send your restaurant name and chosen plan to billing@servrr.ng — we'll reply with bank details within a few hours.",
                 "Once payment is confirmed, your subscription will be activated within 2 hours.",
               ].map((step, i) => (
@@ -349,16 +369,17 @@ const BillingTab = () => {
               </div>
             ) : (
               <div className="divide-y divide-white/5">
-                <div className="hidden md:grid grid-cols-4 gap-4 p-6 bg-[#1a1a1a] text-xs font-bold uppercase tracking-widest text-white/40">
-                  <div>Date</div><div>Plan</div><div>Amount</div><div>Status</div>
+                <div className="hidden md:grid grid-cols-5 gap-4 p-6 bg-[#1a1a1a] text-xs font-bold uppercase tracking-widest text-white/40">
+                  <div>Date</div><div>Plan</div><div>Cycle</div><div>Amount</div><div>Status</div>
                 </div>
                 {billingHistory.map((inv) => (
                   <div
                     key={inv.id}
-                    className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 items-center hover:bg-white/[0.02] transition-colors"
+                    className="grid grid-cols-2 md:grid-cols-5 gap-4 p-6 items-center hover:bg-white/[0.02] transition-colors"
                   >
                     <div className="text-sm font-medium">{fmtDate(inv.date)}</div>
-                    <div className="text-sm capitalize">{PLAN_LABELS[inv.plan] || inv.plan}</div>
+                    <div className="text-sm capitalize">{PLAN_LABELS[normalizePlan(inv.plan)] || inv.plan}</div>
+                    <div className="text-sm capitalize text-white/50">{inv.cycle || "monthly"}</div>
                     <div className="text-sm font-bold">₦{Number(inv.amount || 0).toLocaleString()}</div>
                     <div>
                       <span
